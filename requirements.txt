@@ -33,6 +33,10 @@ streamlit>=1.35.0
 
 # ── Görselleştirme & İzleme ───────────────────────────────────────────────────
 matplotlib>=3.7.0
+plotly>=5.17.0          # Gauge, dağılım, histogram, alan karşılaştırma grafikleri
 tqdm>=4.65.0
 tensorboard>=2.13.0
 jupyter>=1.0.0
+
+# ── Rapor üretimi ─────────────────────────────────────────────────────────────
+fpdf2>=2.7.0            # Klinik rapor → PDF indirme (opsiyonel)
