@@ -1,143 +1,178 @@
 """
-Grad-CAM (Gradient-weighted Class Activation Mapping)
-Modelin pnömotoraks kararını hangi bölgeye bakarak verdiğini görselleştirir.
+Captum Tabanlı Açıklanabilirlik Modülü
+  - LayerGradCam    : Hangi bölge tetikledi?
+  - IntegratedGradients : Piksel düzeyinde katkı
 
-Yöntem:
-  - Encoder'ın son katmanına forward hook takılır
-  - Classification head'in gradyanları backward hook ile yakalanır
-  - Global average pooling → ağırlıklar → ısı haritası
-  - Isı haritası orijinal görüntüye bindirilir
+Eski manuel hook yaklaşımı → Captum ile değiştirildi.
+Captum, PyTorch'un resmi XAI kütüphanesidir; daha kararlı ve
+genişletilebilir sonuçlar üretir.
 
 TÜBİTAK 2209-A | Ahmet Demir
 """
+
+from __future__ import annotations
 
 import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+try:
+    from captum.attr import IntegratedGradients, LayerGradCam, LayerAttribution
+    CAPTUM_AVAILABLE = True
+except ImportError:
+    CAPTUM_AVAILABLE = False
 
-class GradCAM:
+
+# ── Hedef katmanı bul ─────────────────────────────────────────────────────────
+
+def _get_target_layer(model: torch.nn.Module) -> torch.nn.Module:
     """
-    PneumothoraxModel için Grad-CAM uygulaması.
-    Encoder'ın son feature map'i hedef katman olarak kullanılır.
+    EfficientNet encoder'ının son blok katmanını döndürür.
+    segmentation_models_pytorch encoder hiyerarşisi:
+      model.unet.encoder.model.blocks[-1]
     """
-
-    def __init__(self, model: torch.nn.Module):
-        self.model = model
-        self._features: torch.Tensor | None = None
-        self._gradients: torch.Tensor | None = None
-        self._hooks: list = []
-        self._register_hooks()
-
-    def _register_hooks(self) -> None:
-        """Encoder'ın son katmanına forward + backward hook ekler."""
-        # segmentation_models_pytorch encoder'ında son blok
-        target_layer = self.model.unet.encoder.model.blocks[-1]
-
-        def forward_hook(module, input, output):
-            self._features = output.detach()
-
-        def backward_hook(module, grad_input, grad_output):
-            self._gradients = grad_output[0].detach()
-
-        self._hooks.append(target_layer.register_forward_hook(forward_hook))
-        self._hooks.append(target_layer.register_full_backward_hook(backward_hook))
-
-    def remove_hooks(self) -> None:
-        """Bellek sızıntısını önlemek için hook'ları kaldırır."""
-        for h in self._hooks:
-            h.remove()
-        self._hooks.clear()
-
-    def generate(
-        self,
-        image_tensor: torch.Tensor,
-        target_size: tuple[int, int] | None = None,
-    ) -> tuple[np.ndarray, float]:
-        """
-        Grad-CAM ısı haritası üretir.
-
-        Args:
-            image_tensor : (1, 1, H, W) float32, normalize edilmiş
-            target_size  : Çıktı boyutu (H, W); None ise orijinal boyut
-
-        Returns:
-            heatmap : float32 ndarray (H, W), 0-1 arası normalize
-            prob    : Classification olasılığı (0-1)
-        """
-        self.model.eval()
-        device = next(self.model.parameters()).device
-        x = image_tensor.to(device)
-        x.requires_grad_(False)
-
-        # Forward pass
-        seg_pred, cls_pred = self.model(x)
-        prob = torch.sigmoid(cls_pred).item()
-
-        # Gradyanları sıfırla ve backward
-        self.model.zero_grad()
-        cls_pred.backward()
-
-        if self._gradients is None or self._features is None:
-            raise RuntimeError("Grad-CAM hook'ları çalışmadı. Modeli kontrol edin.")
-
-        # Global average pooling → kanal ağırlıkları
-        weights = self._gradients.mean(dim=(2, 3), keepdim=True)  # (1, C, 1, 1)
-
-        # Ağırlıklı feature map toplamı
-        cam = (weights * self._features).sum(dim=1, keepdim=True)  # (1, 1, h, w)
-        cam = F.relu(cam)
-
-        # Normalize
-        cam = cam.squeeze().cpu().numpy()
-        cam_min, cam_max = cam.min(), cam.max()
-        if cam_max - cam_min > 1e-8:
-            cam = (cam - cam_min) / (cam_max - cam_min)
-        else:
-            cam = np.zeros_like(cam)
-
-        # Boyut ayarla
-        if target_size is not None:
-            cam = cv2.resize(cam, (target_size[1], target_size[0]))
-
-        return cam, prob
+    return model.unet.encoder.model.blocks[-1]
 
 
-def apply_heatmap(
-    gray_image: np.ndarray,
-    heatmap: np.ndarray,
-    alpha: float = 0.45,
-    colormap: int = cv2.COLORMAP_JET,
-) -> np.ndarray:
+# ── Captum Grad-CAM ───────────────────────────────────────────────────────────
+
+def _cls_forward(model, x: torch.Tensor) -> torch.Tensor:
+    """Captum'un beklediği tek çıktılı forward wrapper."""
+    _, cls_out = model(x)
+    return cls_out
+
+
+def generate_gradcam_captum(
+    model: torch.nn.Module,
+    image_tensor: torch.Tensor,
+    target_size: tuple[int, int] | None = None,
+) -> tuple[np.ndarray, float]:
     """
-    Grad-CAM ısı haritasını gri görüntü üzerine bindirir.
+    Captum LayerGradCam ile ısı haritası üretir.
 
     Args:
-        gray_image : uint8 grayscale X-ray (HxW)
-        heatmap    : float32 ndarray (HxW), 0-1 arası
-        alpha      : Isı haritası yoğunluğu
-        colormap   : OpenCV colormap (varsayılan JET)
+        model        : PneumothoraxModel (eval mode)
+        image_tensor : (1, 1, H, W) float32
+        target_size  : (H, W) çıktı boyutu; None → orijinal boyut
 
     Returns:
-        result: BGR görüntü, ısı haritası overlay
+        heatmap : float32 ndarray (H, W), 0-1 normalize
+        prob    : Pnömotoraks olasılığı
     """
-    # Isı haritasını renklendirmek için 0-255'e ölçekle
-    heatmap_uint8 = (heatmap * 255).astype(np.uint8)
-    colored = cv2.applyColorMap(heatmap_uint8, colormap)
+    if not CAPTUM_AVAILABLE:
+        raise ImportError("captum kurulu değil: pip install captum")
 
-    # Gri görüntüyü BGR'ye çevir
-    if gray_image.ndim == 2:
-        bgr = cv2.cvtColor(gray_image, cv2.COLOR_GRAY2BGR)
-    else:
-        bgr = gray_image
+    model.eval()
+    device = next(model.parameters()).device
+    x = image_tensor.to(device).requires_grad_(True)
 
-    # Boyutları eşleştir
-    if colored.shape[:2] != bgr.shape[:2]:
-        colored = cv2.resize(colored, (bgr.shape[1], bgr.shape[0]))
+    target_layer = _get_target_layer(model)
+    layer_gc = LayerGradCam(
+        forward_func=lambda inp: _cls_forward(model, inp),
+        layer=target_layer,
+    )
 
-    return cv2.addWeighted(colored, alpha, bgr, 1.0 - alpha, 0)
+    # Grad-CAM attribution
+    attribution = layer_gc.attribute(x, target=None)   # binary → single output
+    # (1, C, h, w) → upsample → (1, 1, H, W)
+    upsampled = LayerAttribution.interpolate(attribution, x.shape[2:])
 
+    cam = upsampled.squeeze().detach().cpu().numpy()
+    cam = np.maximum(cam, 0)  # ReLU
+    if cam.max() > 1e-8:
+        cam = cam / cam.max()
+
+    if target_size is not None:
+        cam = cv2.resize(cam, (target_size[1], target_size[0]))
+
+    with torch.no_grad():
+        _, cls_out = model(image_tensor.to(device))
+    prob = torch.sigmoid(cls_out).item()
+
+    return cam, prob
+
+
+# ── Integrated Gradients (piksel düzeyinde katkı) ────────────────────────────
+
+def generate_integrated_gradients(
+    model: torch.nn.Module,
+    image_tensor: torch.Tensor,
+    n_steps: int = 50,
+) -> np.ndarray:
+    """
+    Integrated Gradients: her pikselin sınıflandırma kararına katkısını gösterir.
+    Grad-CAM'den daha ince granülarite sağlar, küçük pnömotoraks için faydalıdır.
+
+    Returns:
+        attr_map : float32 ndarray (H, W), normalize edilmiş katkı haritası
+    """
+    if not CAPTUM_AVAILABLE:
+        raise ImportError("captum kurulu değil: pip install captum")
+
+    model.eval()
+    device = next(model.parameters()).device
+    x = image_tensor.to(device)
+
+    ig = IntegratedGradients(forward_func=lambda inp: _cls_forward(model, inp))
+    baseline = torch.zeros_like(x)
+
+    attributions, _ = ig.attribute(
+        x, baselines=baseline, n_steps=n_steps, return_convergence_delta=True
+    )
+
+    attr_map = attributions.squeeze().detach().cpu().numpy()
+    attr_map = np.abs(attr_map)  # büyüklük önemli, işaret değil
+    if attr_map.max() > 1e-8:
+        attr_map = attr_map / attr_map.max()
+
+    return attr_map
+
+
+# ── Yedek: Captum yoksa manuel Grad-CAM ──────────────────────────────────────
+
+def _generate_gradcam_manual(
+    model: torch.nn.Module,
+    image_tensor: torch.Tensor,
+    target_size: tuple[int, int] | None = None,
+) -> tuple[np.ndarray, float]:
+    """Captum kurulu değilse devreye giren yedek implementasyon."""
+    model.eval()
+    device = next(model.parameters()).device
+    x = image_tensor.to(device)
+
+    features_cache: list[torch.Tensor] = []
+    grads_cache:    list[torch.Tensor] = []
+
+    target = _get_target_layer(model)
+
+    fh = target.register_forward_hook(lambda m, i, o: features_cache.append(o))
+    bh = target.register_full_backward_hook(
+        lambda m, gi, go: grads_cache.append(go[0])
+    )
+
+    try:
+        _, cls_out = model(x)
+        prob = torch.sigmoid(cls_out).item()
+        model.zero_grad()
+        cls_out.backward()
+    finally:
+        fh.remove()
+        bh.remove()
+
+    weights = grads_cache[0].mean(dim=(2, 3), keepdim=True)
+    cam = (weights * features_cache[0]).sum(dim=1).squeeze()
+    cam = F.relu(cam).detach().cpu().numpy()
+    if cam.max() > 1e-8:
+        cam = cam / cam.max()
+
+    if target_size:
+        cam = cv2.resize(cam, (target_size[1], target_size[0]))
+
+    return cam, prob
+
+
+# ── Birleşik arayüz ───────────────────────────────────────────────────────────
 
 def generate_gradcam_result(
     model: torch.nn.Module,
@@ -146,31 +181,42 @@ def generate_gradcam_result(
 ) -> tuple[np.ndarray, float]:
     """
     Tek görüntü için uçtan uca Grad-CAM üretir.
-    FastAPI ve predict.py tarafından çağrılır.
+    Captum varsa kullanır, yoksa manuel implementasyona geçer.
 
     Args:
         model      : Yüklenmiş PneumothoraxModel
         gray_image : uint8 grayscale X-ray (herhangi boyut)
-        img_size   : Modelin beklediği giriş boyutu
+        img_size   : Model giriş boyutu
 
     Returns:
-        overlay : BGR görüntü (Grad-CAM bindirili)
+        overlay : BGR görüntü (ısı haritası bindirili)
         prob    : Pnömotoraks olasılığı (0-1)
     """
-    # Ön işleme
-    resized = cv2.resize(gray_image, (img_size, img_size))
+    resized    = cv2.resize(gray_image, (img_size, img_size))
     normalized = resized.astype(np.float32) / 255.0
+    tensor     = torch.tensor(normalized).unsqueeze(0).unsqueeze(0)
 
-    # Tensor → (1, 1, H, W)
-    tensor = torch.tensor(normalized).unsqueeze(0).unsqueeze(0)
+    target_size = (gray_image.shape[0], gray_image.shape[1])
 
-    cam_obj = GradCAM(model)
-    try:
-        heatmap, prob = cam_obj.generate(
-            tensor, target_size=(gray_image.shape[0], gray_image.shape[1])
-        )
-    finally:
-        cam_obj.remove_hooks()
+    if CAPTUM_AVAILABLE:
+        cam, prob = generate_gradcam_captum(model, tensor, target_size=target_size)
+    else:
+        cam, prob = _generate_gradcam_manual(model, tensor, target_size=target_size)
 
-    overlay = apply_heatmap(gray_image, heatmap, alpha=0.45)
+    overlay = apply_heatmap(gray_image, cam)
     return overlay, prob
+
+
+def apply_heatmap(
+    gray_image: np.ndarray,
+    heatmap: np.ndarray,
+    alpha: float = 0.45,
+    colormap: int = cv2.COLORMAP_JET,
+) -> np.ndarray:
+    """Isı haritasını gri görüntü üzerine bindirir → BGR çıktı."""
+    heatmap_u8 = (heatmap * 255).astype(np.uint8)
+    colored    = cv2.applyColorMap(heatmap_u8, colormap)
+    bgr        = cv2.cvtColor(gray_image, cv2.COLOR_GRAY2BGR) if gray_image.ndim == 2 else gray_image
+    if colored.shape[:2] != bgr.shape[:2]:
+        colored = cv2.resize(colored, (bgr.shape[1], bgr.shape[0]))
+    return cv2.addWeighted(colored, alpha, bgr, 1.0 - alpha, 0)
