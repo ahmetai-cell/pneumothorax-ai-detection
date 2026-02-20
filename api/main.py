@@ -28,6 +28,7 @@ from PIL import Image
 from src.model.unet import PneumothoraxModel
 from src.preprocessing.green_mask_extractor import load_image, overlay_mask_on_image
 from src.utils.gradcam import generate_gradcam_result
+from src.utils.tta import predict_tta, uncertainty_label
 
 # ── Uygulama ──────────────────────────────────────────────────────────────────
 
@@ -150,7 +151,7 @@ async def health():
     }
 
 
-@app.post("/predict", summary="Akciğer grafisi analiz et")
+@app.post("/predict", summary="Akciğer grafisi analiz et (standart)")
 async def predict(file: UploadFile = File(...)):
     """
     **Akış:**
@@ -220,4 +221,68 @@ async def predict(file: UploadFile = File(...)):
         "diagnosis":           diagnosis,
         "gradcam_image":       ndarray_to_base64(gradcam_bgr),
         "segmentation_image":  ndarray_to_base64(seg_overlay),
+    })
+
+
+@app.post("/predict/tta", summary="Akciğer grafisi analiz et (TTA — daha güvenilir)")
+async def predict_with_tta(file: UploadFile = File(...)):
+    """
+    **Test-Time Augmentation (TTA) ile tahmin.**
+
+    Aynı görüntüyü 5 farklı dönüşümle analiz eder, ortalamasını alır.
+    Standart `/predict`'e göre daha güvenilir; özellikle sınırda vakalarda
+    ve apikal küçük pnömotorakslar için önerilir.
+
+    **Ek dönen değerler:**
+    - `prob_std`      : 5 tahminin standart sapması (belirsizlik ölçüsü)
+    - `prob_votes`    : Her varyantın bireysel tahmini
+    - `uncertainty`   : Klinik güven etiketi
+    - `is_uncertain`  : Radyolog incelemesi önerilir mi?
+    """
+    filename = file.filename or ""
+    allowed_ext = {".png", ".jpg", ".jpeg", ".dcm", ".dicom"}
+    if Path(filename).suffix.lower() not in allowed_ext:
+        raise HTTPException(status_code=400, detail=f"Desteklenmeyen dosya türü.")
+
+    try:
+        model = get_model()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    try:
+        gray = read_upload_as_gray(file)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Görüntü okunamadı: {e}")
+
+    try:
+        tta_result = predict_tta(model, gray, img_size=IMG_SIZE, seg_threshold=THRESHOLD)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTA hatası: {e}")
+
+    prob     = tta_result["prob_mean"]
+    has_ptx  = prob >= THRESHOLD
+    seg_overlay = overlay_mask_on_image(
+        gray, tta_result["seg_binary"], alpha=0.4, color_bgr=(0, 60, 220)
+    )
+
+    try:
+        gradcam_bgr, _ = generate_gradcam_result(model, gray, img_size=IMG_SIZE)
+    except Exception:
+        gradcam_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+    if has_ptx:
+        diagnosis = f"PNÖMOTORAKS TESPİT EDİLDİ — TTA olasılık: {prob:.1%}"
+    else:
+        diagnosis = f"Normal — TTA olasılık: {prob:.1%}"
+
+    return JSONResponse({
+        "has_pneumothorax":   has_ptx,
+        "probability":        round(prob, 4),
+        "prob_std":           round(tta_result["prob_std"], 4),
+        "prob_votes":         [round(p, 4) for p in tta_result["prob_votes"]],
+        "uncertainty":        uncertainty_label(tta_result),
+        "is_uncertain":       tta_result["is_uncertain"],
+        "diagnosis":          diagnosis,
+        "gradcam_image":      ndarray_to_base64(gradcam_bgr),
+        "segmentation_image": ndarray_to_base64(seg_overlay),
     })

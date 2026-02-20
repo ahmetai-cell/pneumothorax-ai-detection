@@ -19,6 +19,11 @@ import numpy as np
 from src.model.unet import PneumothoraxModel
 from src.model.losses import CombinedLoss
 from src.utils.metrics import dice_score, iou_score, compute_auc
+from src.utils.hard_negative_mining import (
+    find_hard_negatives,
+    update_sampler_with_hard_negatives,
+    get_negative_indices,
+)
 
 
 # ── Sampler ───────────────────────────────────────────────────────────────────
@@ -172,6 +177,12 @@ def train_kfold(dataset, config: dict) -> list[dict]:
         best_dice = best_auc = 0.0
         ckpt_path = f"{config['checkpoint_dir']}/fold{fold}_best.pth"
 
+        # HNM için negatif indeksler ve etiketler (fold'a özgü)
+        hnm_enabled   = config.get("hard_negative_mining", True)
+        hnm_interval  = config.get("hnm_interval", 3)   # kaç epoch'ta bir
+        train_labels_fold = [labels[i] for i in train_idx]
+        neg_indices_fold  = [i for i, l in enumerate(train_labels_fold) if l == 0]
+
         for epoch in range(1, config["epochs"] + 1):
             print(f"\n  Epoch {epoch}/{config['epochs']}")
 
@@ -189,6 +200,27 @@ def train_kfold(dataset, config: dict) -> list[dict]:
                 f"  Val   → Loss: {val_loss:.4f}   Dice: {val_dice:.4f}  "
                 f"IoU: {val_iou:.4f}  AUC: {val_auc:.4f}"
             )
+
+            # Hard Negative Mining: her hnm_interval epoch'ta sampler güncelle
+            if hnm_enabled and epoch % hnm_interval == 0:
+                print("  [HNM] Zor negatifler taranıyor…")
+                hard_negs = find_hard_negatives(
+                    model, train_subset, neg_indices_fold, device,
+                    fp_threshold=config.get("hnm_threshold", 0.4),
+                )
+                if hard_negs:
+                    print(f"  [HNM] {len(hard_negs)} hard negative bulundu, sampler güncellendi.")
+                    new_sampler = update_sampler_with_hard_negatives(
+                        train_labels_fold, hard_negs,
+                        hard_neg_multiplier=config.get("hnm_multiplier", 3.0),
+                    )
+                    train_loader = DataLoader(
+                        train_subset,
+                        batch_size=config["batch_size"],
+                        sampler=new_sampler,
+                        num_workers=4,
+                        pin_memory=True,
+                    )
 
             if val_dice > best_dice:
                 best_dice = val_dice
