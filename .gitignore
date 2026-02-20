@@ -12,9 +12,12 @@ results/checkpoints/*.pt
 __pycache__/
 *.py[cod]
 *.egg-info/
-.env
+.env          # API key'leri içerir, commit etme
 venv/
 .venv/
+
+# W&B
+wandb/
 
 # Jupyter
 .ipynb_checkpoints/
