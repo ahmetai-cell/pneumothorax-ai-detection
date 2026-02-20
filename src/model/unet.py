@@ -51,7 +51,8 @@ class PneumothoraxModel(nn.Module):
             cls_out : (B, 1)       — sınıflandırma logit'leri
         """
         features = self.unet.encoder(x)
-        decoder_out = self.unet.decoder(*features)
+        # smp 0.5+: decoder(features) liste alır; eski sürümde *features unpacking kullanılırdı
+        decoder_out = self.unet.decoder(features)
         seg_out = self.unet.segmentation_head(decoder_out)
         cls_out = self.classifier(features[-1])
         return seg_out, cls_out

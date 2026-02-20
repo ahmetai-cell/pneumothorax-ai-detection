@@ -213,7 +213,7 @@ def train_kfold(dataset, config: dict) -> list[dict]:
             weight_decay=config.get("weight_decay", 1e-4),
         )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=5, verbose=True
+            optimizer, mode="min", factor=0.5, patience=5
         )
 
         # ── Epoch döngüsü ─────────────────────────────────────────────────
@@ -336,7 +336,7 @@ def train(config: dict) -> None:
     optimizer = optim.Adam(model.parameters(), lr=config["lr"],
                            weight_decay=config.get("weight_decay", 1e-4))
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=5, verbose=True
+        optimizer, mode="min", factor=0.5, patience=5
     )
 
     best_dice = 0.0
