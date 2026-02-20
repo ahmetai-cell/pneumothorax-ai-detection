@@ -2,6 +2,8 @@
 W&B Yardımcı Fonksiyonlar
 - Fold başına wandb.init (ayrı run)
 - Görsel hata analizi: FP ve FN vakalar wandb.Table olarak
+  → DICOM metadata (ViewPosition, Manufacturer, kVp, PixelSpacing)
+  → Hausdorff Distance per case
 - 5-fold özet → wandb.summary
 
 TÜBİTAK 2209-A | Ahmet Demir
@@ -13,6 +15,8 @@ import numpy as np
 import torch
 import cv2
 from torch.utils.data import DataLoader, Subset
+
+from src.utils.metrics import hausdorff_distance
 
 try:
     import wandb
@@ -87,12 +91,17 @@ def log_epoch_metrics(
     val_specificity: float,
     val_precision: float,
     current_lr: float,
+    val_hausdorff: float | None = None,
 ) -> None:
-    """Her epoch sonunda tüm metrikleri W&B'ye loglar."""
+    """
+    Her epoch sonunda tüm metrikleri W&B'ye loglar.
+
+    val_hausdorff: HD95 değeri (piksel). None ise log'a dahil edilmez.
+    """
     if not WANDB_AVAILABLE:
         return
 
-    wandb.log({
+    payload = {
         "epoch":              epoch,
         # Kayıp
         "Loss/BCE_Dice_Loss_train": train_loss,
@@ -107,7 +116,13 @@ def log_epoch_metrics(
         "Classification/Precision":            val_precision,
         # Öğrenme oranı
         "LR": current_lr,
-    })
+    }
+
+    # Hausdorff — sonsuz değer W&B'de NaN olarak görünür; filtrele
+    if val_hausdorff is not None and not np.isinf(val_hausdorff):
+        payload["Segmentation/Hausdorff_HD95_px"] = val_hausdorff
+
+    wandb.log(payload)
 
 
 def log_hnm_stats(fold: int, epoch: int, n_hard: int, n_total_neg: int) -> None:
@@ -134,8 +149,15 @@ def log_error_analysis(
 ) -> None:
     """
     Val seti üzerinde inference çalıştırır.
-    En zorlu FP ve FN vakalarını orijinal grafı + GT maskesi + tahmin ile
-    wandb.Table formatında yükler.
+    En zorlu FP ve FN vakalarını W&B Table'a yükler.
+
+    Tablo sütunları:
+        Tür, Olasılık, Dice, HD95_px,
+        ViewPosition, Manufacturer, kVp, PixelSpacing_mm, Görsel
+
+    DICOM metadata:
+        DicomSlicerDataset.get_dicom_meta(idx) üzerinden çekilir.
+        Dataset bir Subset ise Subset.dataset.get_dicom_meta() denenir.
 
     FP (False Positive): Model pnömotoraks dedi, GT negatif
     FN (False Negative): Model normal dedi, GT pozitif
@@ -147,7 +169,19 @@ def log_error_analysis(
     val_subset = Subset(dataset, val_indices)
     loader     = DataLoader(val_subset, batch_size=8, shuffle=False)
 
+    # DICOM metadata çekici (mevcut değilse None döner)
+    def _get_meta(subset_idx: int) -> dict | None:
+        original_idx = val_indices[subset_idx]
+        base_ds = dataset.dataset if isinstance(dataset, Subset) else dataset
+        if hasattr(base_ds, "get_dicom_meta"):
+            try:
+                return base_ds.get_dicom_meta(original_idx)
+            except Exception:
+                pass
+        return None
+
     records: list[dict] = []
+    sample_offset = 0  # DataLoader içinde kaçıncı örneği işliyoruz
 
     for images, masks, labels in loader:
         images = images.to(device)
@@ -156,7 +190,7 @@ def log_error_analysis(
         cls_prob = torch.sigmoid(cls_pred).squeeze(-1)
 
         for i in range(len(images)):
-            gt_label = int(labels[i].item())
+            gt_label  = int(labels[i].item())
             pred_prob = float(cls_prob[i].item())
             pred_label = int(pred_prob >= 0.5)
 
@@ -165,6 +199,7 @@ def log_error_analysis(
             is_fn = (pred_label == 0 and gt_label == 1)
 
             if not (is_fp or is_fn):
+                sample_offset += 1
                 continue
 
             img_np  = images[i, 0].cpu().numpy()
@@ -176,17 +211,29 @@ def log_error_analysis(
             inter    = (pred_bin * gt_np).sum()
             dice_val = (2 * inter + 1e-6) / (pred_bin.sum() + gt_np.sum() + 1e-6)
 
+            # Hausdorff Distance HD95 (piksel)
+            hd_val = hausdorff_distance(
+                torch.tensor(pred_np), torch.tensor(gt_np), percentile=95.0
+            )
+
+            # DICOM metadata
+            meta = _get_meta(sample_offset) or {}
+
             records.append({
-                "type":      "FP" if is_fp else "FN",
-                "prob":      pred_prob,
-                "dice":      float(dice_val),
-                "img_np":    img_np,
-                "gt_np":     gt_np,
-                "pred_np":   pred_np,
-                # FP'de modelin güveni ne kadar yüksek → en kötü FP'ler en üstte
-                # FN'de modelin güveni ne kadar düşük → en kaçırılan FN'ler en üstte
-                "sort_key":  pred_prob if is_fp else (1 - pred_prob),
+                "type":          "FP" if is_fp else "FN",
+                "prob":          pred_prob,
+                "dice":          float(dice_val),
+                "hd95":          hd_val if not np.isinf(hd_val) else -1.0,
+                "view_position": meta.get("view_position", "N/A"),
+                "manufacturer":  meta.get("manufacturer",  "N/A"),
+                "kvp":           meta.get("kvp",           "N/A"),
+                "pixel_spacing": meta.get("pixel_spacing", "N/A"),
+                "img_np":        img_np,
+                "gt_np":         gt_np,
+                "pred_np":       pred_np,
+                "sort_key":      pred_prob if is_fp else (1 - pred_prob),
             })
+            sample_offset += 1
 
     # En zorlu n_cases FP ve FN
     fp_cases = sorted([r for r in records if r["type"] == "FP"],
@@ -195,43 +242,55 @@ def log_error_analysis(
                       key=lambda x: x["sort_key"], reverse=True)[:n_cases]
 
     def make_panel_image(rec: dict) -> wandb.Image:
-        img   = (rec["img_np"] * 255).astype(np.uint8)
-        bgr   = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        img = (rec["img_np"] * 255).astype(np.uint8)
+        bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
         # GT maskesi — yeşil
         gt_vis = bgr.copy()
         gt_vis[rec["gt_np"] > 0.5] = [0, 200, 0]
         gt_vis = cv2.addWeighted(gt_vis, 0.45, bgr, 0.55, 0)
 
-        # Tahmin maskesi — kırmızı
+        # Tahmin maskesi — mavi
         pred_bin = (rec["pred_np"] > 0.5).astype(np.uint8)
         pred_vis = bgr.copy()
         pred_vis[pred_bin > 0] = [0, 60, 220]
         pred_vis = cv2.addWeighted(pred_vis, 0.45, bgr, 0.55, 0)
 
-        # Yan yana panel: Orijinal | GT (yeşil) | Tahmin (kırmızı)
+        # Yan yana panel: Orijinal | GT (yeşil) | Tahmin (mavi)
         panel = np.hstack([
             cv2.cvtColor(bgr,      cv2.COLOR_BGR2RGB),
             cv2.cvtColor(gt_vis,   cv2.COLOR_BGR2RGB),
             cv2.cvtColor(pred_vis, cv2.COLOR_BGR2RGB),
         ])
 
+        hd_str = f"{rec['hd95']:.1f}px" if rec["hd95"] >= 0 else "inf"
         return wandb.Image(
             panel,
             caption=(
-                f"{rec['type']} | Olasılık: {rec['prob']:.3f} | "
-                f"Dice: {rec['dice']:.3f} | "
-                "[Orijinal | GT-Maske(yeşil) | Tahmin(mavi)]"
+                f"{rec['type']} | P:{rec['prob']:.3f} | "
+                f"Dice:{rec['dice']:.3f} | HD95:{hd_str} | "
+                f"Pos:{rec['view_position']} | "
+                "[Orijinal | GT | Tahmin]"
             ),
         )
 
-    # W&B Table: sütunlar = Tür, Olasılık, Dice, Panel
-    table = wandb.Table(columns=["Tür", "Olasılık", "Dice", "Görsel"])
+    # W&B Table — DICOM metadata sütunlarıyla
+    columns = [
+        "Tür", "Olasılık", "Dice", "HD95_px",
+        "ViewPosition", "Manufacturer", "kVp", "PixelSpacing_mm",
+        "Görsel",
+    ]
+    table = wandb.Table(columns=columns)
     for rec in fp_cases + fn_cases:
         table.add_data(
             rec["type"],
-            round(rec["prob"], 4),
-            round(rec["dice"], 4),
+            round(rec["prob"],  4),
+            round(rec["dice"],  4),
+            round(rec["hd95"],  2) if rec["hd95"] >= 0 else "inf",
+            rec["view_position"],
+            rec["manufacturer"],
+            rec["kvp"],
+            rec["pixel_spacing"],
             make_panel_image(rec),
         )
 
@@ -241,7 +300,10 @@ def log_error_analysis(
         f"fold{fold}/FN_vakalar": [make_panel_image(r) for r in fn_cases],
     })
 
-    print(f"  [W&B] Fold {fold}: {len(fp_cases)} FP + {len(fn_cases)} FN vaka yüklendi.")
+    print(
+        f"  [W&B] Fold {fold}: {len(fp_cases)} FP + {len(fn_cases)} FN vaka yüklendi "
+        f"(DICOM metadata + HD95 dahil)."
+    )
 
 
 # ── 5-Fold Özet ───────────────────────────────────────────────────────────────
