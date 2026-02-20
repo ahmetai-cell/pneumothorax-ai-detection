@@ -1,7 +1,7 @@
 """
-Eğitim Döngüsü
-K-Fold CV + WeightedRandomSampler + ReduceLROnPlateau
-+ Hard Negative Mining + W&B + Results Table
+Eğitim Döngüsü — Tam W&B Entegrasyonlu
+Stratified K-Fold + WeightedRandomSampler + ReduceLROnPlateau
++ Hard Negative Mining + Görsel Hata Analizi + Özet Tablo
 
 TÜBİTAK 2209-A | Ahmet Demir
 """
@@ -21,22 +21,18 @@ from src.utils.hard_negative_mining import (
 )
 from src.utils.metrics import compute_auc, dice_score, iou_score
 from src.utils.results_table import append_fold_result, save_results_table
-from src.utils.wandb_utils import log_hnm_stats, log_prediction_samples
-
-try:
-    import wandb
-    WANDB_AVAILABLE = True
-except ImportError:
-    WANDB_AVAILABLE = False
+from src.utils.wandb_utils import (
+    init_fold_run,
+    log_epoch_metrics,
+    log_error_analysis,
+    log_hnm_stats,
+    log_kfold_summary,
+)
 
 
 # ── Sampler ───────────────────────────────────────────────────────────────────
 
 def make_weighted_sampler(labels: list[int]) -> WeightedRandomSampler:
-    """
-    Sınıf dengesizliğini gidermek için WeightedRandomSampler.
-    Pnömotoraks nadir (~%20 pozitif) → pozitif örnekler daha sık seçilir.
-    """
     labels_arr    = np.array(labels)
     class_counts  = np.bincount(labels_arr)
     class_weights = 1.0 / class_counts
@@ -48,9 +44,44 @@ def make_weighted_sampler(labels: list[int]) -> WeightedRandomSampler:
     )
 
 
+# ── Metrik hesaplama ──────────────────────────────────────────────────────────
+
+def _compute_cls_metrics(
+    all_preds: torch.Tensor, all_targets: torch.Tensor, threshold: float = 0.5
+) -> dict:
+    """
+    Sınıflandırma metriklerini hesaplar.
+    Dönen metrikler: auc, sensitivity, specificity, precision
+    """
+    probs    = torch.sigmoid(all_preds).squeeze()
+    pred_bin = (probs > threshold).float()
+    targets  = all_targets.float()
+
+    tp = ((pred_bin == 1) & (targets == 1)).sum().item()
+    tn = ((pred_bin == 0) & (targets == 0)).sum().item()
+    fp = ((pred_bin == 1) & (targets == 0)).sum().item()
+    fn = ((pred_bin == 0) & (targets == 1)).sum().item()
+
+    sensitivity = tp / (tp + fn + 1e-8)          # Recall / Duyarlılık
+    specificity = tn / (tn + fp + 1e-8)          # Özgüllük
+    precision   = tp / (tp + fp + 1e-8)          # Kesinlik
+
+    try:
+        auc = compute_auc(all_preds, all_targets)
+    except ValueError:
+        auc = 0.0
+
+    return {
+        "auc":         auc,
+        "sensitivity": sensitivity,
+        "specificity": specificity,
+        "precision":   precision,
+    }
+
+
 # ── Epoch fonksiyonları ───────────────────────────────────────────────────────
 
-def train_epoch(model, loader, optimizer, criterion, device):
+def train_epoch(model, loader, optimizer, criterion, device) -> tuple[float, float]:
     model.train()
     total_loss = total_dice = 0.0
 
@@ -73,7 +104,7 @@ def train_epoch(model, loader, optimizer, criterion, device):
 
 
 @torch.no_grad()
-def val_epoch(model, loader, criterion, device):
+def val_epoch(model, loader, criterion, device) -> dict:
     model.eval()
     total_loss = total_dice = total_iou = 0.0
     all_cls_preds, all_cls_targets = [], []
@@ -96,20 +127,14 @@ def val_epoch(model, loader, criterion, device):
     n           = len(loader)
     all_preds   = torch.cat(all_cls_preds)
     all_targets = torch.cat(all_cls_targets)
+    cls_metrics = _compute_cls_metrics(all_preds, all_targets)
 
-    try:
-        auc = compute_auc(all_preds, all_targets)
-    except ValueError:
-        auc = 0.0
-
-    # Sensitivity (Recall for positive class)
-    probs    = torch.sigmoid(all_preds).squeeze()
-    pred_bin = (probs > 0.5).float()
-    tp = ((pred_bin == 1) & (all_targets == 1)).sum().item()
-    fn = ((pred_bin == 0) & (all_targets == 1)).sum().item()
-    sensitivity = tp / (tp + fn + 1e-8)
-
-    return total_loss / n, total_dice / n, total_iou / n, auc, sensitivity
+    return {
+        "loss":        total_loss / n,
+        "dice":        total_dice / n,
+        "iou":         total_iou  / n,
+        **cls_metrics,
+    }
 
 
 # ── K-Fold eğitim ─────────────────────────────────────────────────────────────
@@ -117,56 +142,57 @@ def val_epoch(model, loader, criterion, device):
 def train_kfold(dataset, config: dict) -> list[dict]:
     """
     Stratified K-Fold Cross Validation.
-    W&B logging, HNM, WeightedRandomSampler ve Results Table entegreli.
+    Tam W&B entegrasyonu: her fold ayrı run, tüm metrikler ve görsel hata analizi.
 
-    Config anahtarları:
+    config anahtarları:
         epochs, batch_size, lr, weight_decay
-        num_folds          (default 5)
+        num_folds            (default 5)
         checkpoint_dir
-        encoder_name       (default "efficientnet-b0")
+        encoder_name         (default "efficientnet-b0")
         hard_negative_mining (default True)
-        hnm_interval       (default 3)
-        hnm_threshold      (default 0.4)
-        hnm_multiplier     (default 3.0)
-        wandb_project      (default "pneumothorax-tubitak")
-        results_csv        (default "results/kfold_results.csv")
+        hnm_interval         (default 3)
+        hnm_threshold        (default 0.4)
+        hnm_multiplier       (default 3.0)
+        dice_weight          (default 0.5)
+        wandb_project        (default "Pneumothorax-Detection")
+        wandb_entity         (default "ahmet-ai-t-bi-tak")
+        results_csv          (default "results/kfold_results.csv")
     """
     device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    num_folds = config.get("num_folds", 5)
     criterion = CombinedLoss(
         dice_weight=config.get("dice_weight", 0.5),
         bce_weight=1 - config.get("dice_weight", 0.5),
     )
 
-    # W&B başlat
-    use_wandb = WANDB_AVAILABLE and config.get("wandb_project")
-    if use_wandb:
-        wandb.init(
-            project=config["wandb_project"],
-            config=config,
-            reinit=True,
-        )
+    # Tüm fold run'larını gruplamak için ortak bir isim
+    import time
+    group_name = config.get("wandb_group", f"kfold-{int(time.time())}")
+    config["wandb_group"] = group_name
 
     # Etiketler
     labels = [int(dataset[i][2].item()) for i in range(len(dataset))]
-    skf    = StratifiedKFold(
-        n_splits=config.get("num_folds", 5), shuffle=True, random_state=42
-    )
+    skf    = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=42)
+
     fold_results: list[dict] = []
 
     for fold, (train_idx, val_idx) in enumerate(
         skf.split(np.zeros(len(labels)), labels), start=1
     ):
-        print(f"\n{'='*55}")
-        print(f"  FOLD {fold}/{config.get('num_folds', 5)}")
-        print(f"{'='*55}")
+        print(f"\n{'='*60}")
+        print(f"  FOLD {fold}/{num_folds}  —  Eğitim: {len(train_idx)}  Val: {len(val_idx)}")
+        print(f"{'='*60}")
 
-        train_subset = Subset(dataset, list(train_idx))
-        val_subset   = Subset(dataset, list(val_idx))
+        # ── W&B: fold başına ayrı run ─────────────────────────────────────
+        run = init_fold_run(config, fold, num_folds)
 
+        # ── DataLoaders ───────────────────────────────────────────────────
+        train_subset      = Subset(dataset, list(train_idx))
+        val_subset        = Subset(dataset, list(val_idx))
         train_labels_fold = [labels[i] for i in train_idx]
         neg_indices_fold  = [i for i, l in enumerate(train_labels_fold) if l == 0]
-        sampler           = make_weighted_sampler(train_labels_fold)
 
+        sampler      = make_weighted_sampler(train_labels_fold)
         train_loader = DataLoader(
             train_subset, batch_size=config["batch_size"],
             sampler=sampler, num_workers=4, pin_memory=True,
@@ -176,6 +202,7 @@ def train_kfold(dataset, config: dict) -> list[dict]:
             shuffle=False, num_workers=4, pin_memory=True,
         )
 
+        # ── Model ve optimizer ────────────────────────────────────────────
         model = PneumothoraxModel(
             encoder_name=config.get("encoder_name", "efficientnet-b0")
         ).to(device)
@@ -189,9 +216,10 @@ def train_kfold(dataset, config: dict) -> list[dict]:
             optimizer, mode="min", factor=0.5, patience=5, verbose=True
         )
 
-        best_dice = best_auc = best_iou = best_sens = 0.0
-        ckpt_path = f"{config['checkpoint_dir']}/fold{fold}_best.pth"
-
+        # ── Epoch döngüsü ─────────────────────────────────────────────────
+        best = {"dice": 0.0, "iou": 0.0, "auc": 0.0,
+                "sensitivity": 0.0, "specificity": 0.0}
+        ckpt_path    = f"{config['checkpoint_dir']}/fold{fold}_best.pth"
         hnm_enabled  = config.get("hard_negative_mining", True)
         hnm_interval = config.get("hnm_interval", 3)
 
@@ -201,36 +229,36 @@ def train_kfold(dataset, config: dict) -> list[dict]:
             train_loss, train_dice = train_epoch(
                 model, train_loader, optimizer, criterion, device
             )
-            val_loss, val_dice, val_iou, val_auc, val_sens = val_epoch(
-                model, val_loader, criterion, device
-            )
-            scheduler.step(val_loss)
-
+            val_metrics = val_epoch(model, val_loader, criterion, device)
+            scheduler.step(val_metrics["loss"])
             current_lr = optimizer.param_groups[0]["lr"]
 
             print(
                 f"  Train → Loss: {train_loss:.4f}  Dice: {train_dice:.4f}\n"
-                f"  Val   → Loss: {val_loss:.4f}   Dice: {val_dice:.4f}  "
-                f"IoU: {val_iou:.4f}  AUC: {val_auc:.4f}  "
-                f"Sens: {val_sens:.4f}  LR: {current_lr:.2e}"
+                f"  Val   → Loss: {val_metrics['loss']:.4f}  "
+                f"Dice: {val_metrics['dice']:.4f}  IoU: {val_metrics['iou']:.4f}  "
+                f"AUC: {val_metrics['auc']:.4f}  "
+                f"Sens(Recall): {val_metrics['sensitivity']:.4f}  "
+                f"Spec(Özgüllük): {val_metrics['specificity']:.4f}  "
+                f"LR: {current_lr:.2e}"
             )
 
-            # ── W&B per-epoch log ─────────────────────────────────────────────
-            if use_wandb:
-                wandb.log({
-                    "epoch":              epoch,
-                    "fold":               fold,
-                    "train/loss":         train_loss,
-                    "train/dice":         train_dice,
-                    "val/loss":           val_loss,
-                    "val/dice":           val_dice,
-                    "val/iou":            val_iou,
-                    "val/auc":            val_auc,
-                    "val/sensitivity":    val_sens,
-                    "lr":                 current_lr,
-                })
+            # ── W&B: epoch metrikleri ─────────────────────────────────
+            log_epoch_metrics(
+                fold=fold,
+                epoch=epoch,
+                train_loss=train_loss,
+                val_loss=val_metrics["loss"],
+                val_dice=val_metrics["dice"],
+                val_iou=val_metrics["iou"],
+                val_auc=val_metrics["auc"],
+                val_sensitivity=val_metrics["sensitivity"],
+                val_specificity=val_metrics["specificity"],
+                val_precision=val_metrics["precision"],
+                current_lr=current_lr,
+            )
 
-            # ── Hard Negative Mining ──────────────────────────────────────────
+            # ── Hard Negative Mining ──────────────────────────────────
             if hnm_enabled and epoch % hnm_interval == 0:
                 print("  [HNM] Zor negatifler taranıyor…")
                 hard_negs = find_hard_negatives(
@@ -249,38 +277,47 @@ def train_kfold(dataset, config: dict) -> list[dict]:
                     )
                     log_hnm_stats(fold, epoch, len(hard_negs), len(neg_indices_fold))
 
-            # ── Checkpoint ───────────────────────────────────────────────────
-            if val_dice > best_dice:
-                best_dice = val_dice
-                best_auc  = val_auc
-                best_iou  = val_iou
-                best_sens = val_sens
+            # ── Checkpoint ───────────────────────────────────────────
+            if val_metrics["dice"] > best["dice"]:
+                best.update({
+                    "dice":        val_metrics["dice"],
+                    "iou":         val_metrics["iou"],
+                    "auc":         val_metrics["auc"],
+                    "sensitivity": val_metrics["sensitivity"],
+                    "specificity": val_metrics["specificity"],
+                })
                 torch.save(model.state_dict(), ckpt_path)
-                print(f"  ✓ Checkpoint: {ckpt_path}")
+                print(f"  ✓ Checkpoint: {ckpt_path}  (Dice: {best['dice']:.4f})")
 
-        # ── Fold sonu: görsel tahmin log'u ───────────────────────────────────
-        if use_wandb:
-            model.load_state_dict(torch.load(ckpt_path, map_location=device))
-            log_prediction_samples(
-                model, dataset, list(val_idx), device, fold=fold
-            )
-
-        append_fold_result(
-            fold_results, fold,
-            best_dice=best_dice, best_auc=best_auc,
-            best_iou=best_iou,  best_sensitivity=best_sens,
+        # ── Fold sonu: görsel hata analizi ────────────────────────────────
+        print(f"\n  [W&B] Fold {fold} hata analizi yükleniyor…")
+        model.load_state_dict(torch.load(ckpt_path, map_location=device))
+        log_error_analysis(
+            model, dataset, list(val_idx), device, fold=fold, n_cases=5
         )
 
-    # ── Tüm fold'lar bitti: tablo kaydet ────────────────────────────────────
-    results_df = save_results_table(
+        # Fold sonuçlarını kaydet
+        append_fold_result(
+            fold_results, fold,
+            best_dice=best["dice"],        best_auc=best["auc"],
+            best_iou=best["iou"],          best_sensitivity=best["sensitivity"],
+        )
+        fold_results[-1]["best_specificity"] = best["specificity"]
+        fold_results[-1]["group"]            = group_name
+
+        if run:
+            run.finish()
+
+    # ── Tüm fold'lar bitti ────────────────────────────────────────────────────
+
+    # Results CSV
+    save_results_table(
         fold_results,
         output_path=config.get("results_csv", "results/kfold_results.csv"),
     )
 
-    # W&B özet tablosu
-    if use_wandb:
-        wandb.log({"kfold_results": wandb.Table(dataframe=results_df)})
-        wandb.finish()
+    # W&B özet run
+    log_kfold_summary(fold_results)
 
     return fold_results
 
@@ -288,13 +325,11 @@ def train_kfold(dataset, config: dict) -> list[dict]:
 # ── Tek split (hızlı deney) ───────────────────────────────────────────────────
 
 def train(config: dict) -> None:
-    """Tek train/val split. Hızlı deney amaçlı, W&B opsiyonel."""
+    """Tek train/val split. Hızlı deney ve W&B sweep amaçlı."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    use_wandb = WANDB_AVAILABLE and config.get("wandb_project")
-    if use_wandb:
-        wandb.init(project=config["wandb_project"], config=config)
+    run = init_fold_run(config, fold=1, num_folds=1)
 
     model     = PneumothoraxModel(encoder_name=config.get("encoder_name", "efficientnet-b0")).to(device)
     criterion = CombinedLoss()
@@ -310,33 +345,35 @@ def train(config: dict) -> None:
         train_loss, train_dice = train_epoch(
             model, config["train_loader"], optimizer, criterion, device
         )
-        val_loss, val_dice, val_iou, val_auc, val_sens = val_epoch(
-            model, config["val_loader"], criterion, device
-        )
-        scheduler.step(val_loss)
+        val_metrics = val_epoch(model, config["val_loader"], criterion, device)
+        scheduler.step(val_metrics["loss"])
 
         print(
             f"Train → Loss: {train_loss:.4f}  Dice: {train_dice:.4f}\n"
-            f"Val   → Loss: {val_loss:.4f}   Dice: {val_dice:.4f}  "
-            f"IoU: {val_iou:.4f}  AUC: {val_auc:.4f}  Sens: {val_sens:.4f}"
+            f"Val   → Loss: {val_metrics['loss']:.4f}  "
+            f"Dice: {val_metrics['dice']:.4f}  AUC: {val_metrics['auc']:.4f}  "
+            f"Sens: {val_metrics['sensitivity']:.4f}  Spec: {val_metrics['specificity']:.4f}"
         )
 
-        if use_wandb:
-            wandb.log({
-                "epoch": epoch,
-                "train/loss": train_loss, "train/dice": train_dice,
-                "val/loss": val_loss,     "val/dice": val_dice,
-                "val/iou": val_iou,       "val/auc": val_auc,
-                "val/sensitivity": val_sens,
-                "lr": optimizer.param_groups[0]["lr"],
-            })
+        log_epoch_metrics(
+            fold=1, epoch=epoch,
+            train_loss=train_loss,
+            val_loss=val_metrics["loss"],
+            val_dice=val_metrics["dice"],
+            val_iou=val_metrics["iou"],
+            val_auc=val_metrics["auc"],
+            val_sensitivity=val_metrics["sensitivity"],
+            val_specificity=val_metrics["specificity"],
+            val_precision=val_metrics["precision"],
+            current_lr=optimizer.param_groups[0]["lr"],
+        )
 
-        if val_dice > best_dice:
-            best_dice = val_dice
+        if val_metrics["dice"] > best_dice:
+            best_dice = val_metrics["dice"]
             ckpt = config.get("checkpoint_path", "results/checkpoints/best_model.pth")
             torch.save(model.state_dict(), ckpt)
             print(f"✓ Best model kaydedildi (Dice: {best_dice:.4f})")
 
-    if use_wandb:
-        wandb.finish()
+    if run:
+        run.finish()
     print(f"\nEğitim tamamlandı. En iyi Dice: {best_dice:.4f}")
