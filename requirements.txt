@@ -22,6 +22,9 @@ scikit-learn>=1.3.0     # StratifiedKFold, roc_auc_score
 # ── Açıklanabilirlik (XAI) ────────────────────────────────────────────────────
 captum>=0.7.0           # LayerGradCam + IntegratedGradients
 
+# ── Deney Takibi ──────────────────────────────────────────────────────────────
+wandb>=0.17.0           # W&B: metrik loglama, görsel tahminler, sweep
+
 # ── Backend & Demo ────────────────────────────────────────────────────────────
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0

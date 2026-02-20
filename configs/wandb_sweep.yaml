@@ -1,0 +1,41 @@
+# W&B Hyperparameter Sweep Konfigürasyonu
+# Kullanım:
+#   wandb sweep configs/wandb_sweep.yaml
+#   wandb agent <SWEEP_ID>
+#
+# Yöntem: Bayesian Optimization (Grid'den daha verimli)
+# Amaç: val/dice maksimize et
+
+program: scripts/run_sweep.py
+method: bayes
+
+metric:
+  name: val/dice
+  goal: maximize
+
+early_terminate:
+  type: hyperband
+  min_iter: 5
+
+parameters:
+  lr:
+    distribution: log_uniform_values
+    min: 1.0e-5
+    max: 1.0e-3
+
+  batch_size:
+    values: [8, 16]
+
+  hnm_multiplier:
+    values: [2.0, 3.0, 5.0]
+
+  hnm_threshold:
+    values: [0.3, 0.4, 0.5]
+
+  encoder_name:
+    values:
+      - efficientnet-b0
+      - efficientnet-b2
+
+  dice_weight:
+    values: [0.4, 0.5, 0.6]
