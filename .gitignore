@@ -1,0 +1,24 @@
+# Data
+data/raw/
+data/processed/
+*.dcm
+*.dicom
+
+# Model weights
+results/checkpoints/*.pth
+results/checkpoints/*.pt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

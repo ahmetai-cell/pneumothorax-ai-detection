@@ -1,0 +1,19 @@
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.8.0
+albumentations>=1.3.0
+efficientnet-pytorch>=0.7.1
+segmentation-models-pytorch>=0.3.3
+pydicom>=2.4.0
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+scikit-learn>=1.3.0
+Pillow>=10.0.0
+tqdm>=4.65.0
+tensorboard>=2.13.0
+jupyter>=1.0.0
+# FastAPI arayüzü
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
