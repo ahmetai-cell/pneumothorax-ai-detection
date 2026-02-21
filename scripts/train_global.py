@@ -51,7 +51,7 @@ from src.utils.train import train_kfold
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 
-MANIFEST_PATH  = ROOT / "data" / "processed" / "unified_manifest.csv"
+MANIFEST_PATH  = ROOT / "data" / "processed" / "master_manifest.csv"
 CHECKPOINT_DIR = ROOT / "checkpoints"
 RESULTS_DIR    = ROOT / "results"
 BASE_MODEL_OUT = CHECKPOINT_DIR / "global_base_model.pth"
