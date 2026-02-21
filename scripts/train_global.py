@@ -86,6 +86,8 @@ def parse_args() -> argparse.Namespace:
                    help="kfold (önerilen) veya single 80/20 split")
     p.add_argument("--positive_only", action="store_true",
                    help="Yalnızca pnömotoraks pozitif vakaları al (sınırsız negatif)")
+    p.add_argument("--checkpoint_dir", default=None,
+                   help="Checkpoint kayıt dizini (varsayılan: proje içi checkpoints/)")
     return p.parse_args()
 
 
@@ -185,7 +187,7 @@ def main() -> None:
     print(f"\n  Dataset boyutu: {len(dataset):,}")
 
     # ── Config ────────────────────────────────────────────────────────────────
-    ckpt_dir = str(CHECKPOINT_DIR / "global_folds")
+    ckpt_dir = str(Path(args.checkpoint_dir) / "global_folds") if args.checkpoint_dir else str(CHECKPOINT_DIR / "global_folds")
     Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
 
     config = {
