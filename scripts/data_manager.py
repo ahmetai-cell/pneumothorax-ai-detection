@@ -399,6 +399,12 @@ def _build_siim_records(positive_only: bool = False) -> list[dict]:
         except ImportError:
             log.warning("pydicom kurulu değil — SOP UID eşleştirme atlandı")
 
+    # Diagnostic: format mismatch'i görmek için örnekler
+    sample_csv_ids = list(img_labels[id_col].astype(str).head(3))
+    sample_dcm_keys = list(dcm_files.keys())[:6]
+    log.info("CSV ImageId örnekleri : %s", sample_csv_ids)
+    log.info("DCM dosya key örnekleri: %s", sample_dcm_keys)
+
     mask_dir = MASKS_DIR / "siim"
     records  = []
 
