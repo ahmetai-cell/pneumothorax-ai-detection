@@ -354,10 +354,13 @@ def _build_siim_records(positive_only: bool = False) -> list[dict]:
     if positive_only:
         img_labels = img_labels[img_labels["is_pneumo"] == 1]
 
-    # DICOM dosyalarını bul
+    # DICOM dosyalarını bul (followlinks=True: symlink dizinleri de tara)
     dcm_files: dict[str, Path] = {}
-    for dcm in SIIM_DIR.rglob("*.dcm"):
-        dcm_files[dcm.stem] = dcm
+    for root, dirs, files in os.walk(str(SIIM_DIR), followlinks=True):
+        for f in files:
+            if f.endswith(".dcm"):
+                p = Path(root) / f
+                dcm_files[p.stem] = p
 
     mask_dir = MASKS_DIR / "siim"
     records  = []
