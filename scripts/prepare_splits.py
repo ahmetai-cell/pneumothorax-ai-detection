@@ -1,11 +1,10 @@
 """
-80/10/10 Veri Bölme Scripti
-1500 yerel + 3500 açık kaynak → Train / Val / Test
+Veri Bölme Scripti — DEU Test, SIIM/NIH Train/Val
 
-Özellikler:
-  - Stratified split: her setteki pnömotoraks oranı korunur
-  - Hasta seviyesinde sızdırmazlık: aynı hastanın grafileri tek sette kalır
-  - Yerel veri test setine öncelikli atanır (klinik doğrulama için)
+Strateji:
+  - DEU (yerel hastane) verisi TAMAMIYLA test setine gider (klinik doğrulama)
+  - SIIM / NIH açık kaynak veri train (%90) + val (%10) olarak bölünür
+  - DEU verisi az olduğu için eğitimde kullanılmaz, sadece evaluation içindir
   - Tekrarlanabilir bölme (random_state=42)
 
 Kullanım:
@@ -204,38 +203,33 @@ def prepare_splits(
         raise ValueError(f"Eksik sütunlar: {missing}")
 
     # ── Bölme stratejisi ──────────────────────────────────────────────────────
-    # Yerel verinin test setine girmesini önceliklendir:
-    # 1. Yerel vakalar hasta seviyesinde ayrılır
-    # 2. Açık kaynak stratified olarak bölünür
-    # 3. Yerel test → genel test setine eklenir
+    # DEU yerel verisi TAMAMIYLA test setine gider — az ve klinik değerlendirme için.
+    # Açık kaynak (SIIM/NIH) train/val olarak bölünür, test'e girmez.
 
     df_hospital   = df_all[df_all["source"] == "hospital"].copy()
     df_opensource = df_all[df_all["source"] != "hospital"].copy()
 
-    # Açık kaynak bölümü
-    if len(df_opensource) >= 3:
-        oss_train, oss_val, oss_test = _stratified_split(
-            df_opensource, train_ratio, val_ratio, seed
+    # Açık kaynak → sadece train ve val (test yok)
+    if len(df_opensource) >= 2:
+        oss_train, oss_val = train_test_split(
+            df_opensource,
+            test_size=val_ratio / (train_ratio + val_ratio),
+            stratify=df_opensource["has_pneumothorax"] if "has_pneumothorax" in df_opensource.columns else None,
+            random_state=seed,
         )
     else:
         oss_train = df_opensource.copy()
         oss_val   = pd.DataFrame(columns=df_all.columns)
-        oss_test  = pd.DataFrame(columns=df_all.columns)
 
-    # Yerel veri bölümü (hasta seviyesinde)
-    if len(df_hospital) >= 3:
-        hosp_train, hosp_val, hosp_test = _patient_aware_split(
-            df_hospital, train_ratio, val_ratio, seed
-        )
-    else:
-        hosp_train = df_hospital.copy()
-        hosp_val   = pd.DataFrame(columns=df_all.columns)
-        hosp_test  = pd.DataFrame(columns=df_all.columns)
+    # DEU hastane verisi → tamamı test (hiç bölme yapılmaz)
+    hosp_test = df_hospital.copy()
+    if len(hosp_test) > 0:
+        print(f"  DEU verisi test setine atandı: {len(hosp_test)} görüntü (hiç bölme yok)")
 
     # Birleştir
-    df_train = pd.concat([oss_train, hosp_train], ignore_index=True)
-    df_val   = pd.concat([oss_val,   hosp_val],   ignore_index=True)
-    df_test  = pd.concat([oss_test,  hosp_test],  ignore_index=True)
+    df_train = oss_train.copy()
+    df_val   = oss_val.copy()
+    df_test  = hosp_test.copy()
 
     # Shuffle
     df_train = df_train.sample(frac=1, random_state=seed).reset_index(drop=True)
