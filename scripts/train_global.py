@@ -156,6 +156,12 @@ def main() -> None:
         os.environ["WANDB_MODE"] = "disabled"
 
     # ── Dizinler ──────────────────────────────────────────────────────────────
+    # --checkpoint_dir verilmişse oraya yaz (Colab Drive senaryosu)
+    global CHECKPOINT_DIR, BASE_MODEL_OUT, META_OUT
+    if args.checkpoint_dir:
+        CHECKPOINT_DIR = Path(args.checkpoint_dir)
+        BASE_MODEL_OUT = CHECKPOINT_DIR / "global_base_model.pth"
+        META_OUT       = CHECKPOINT_DIR / "global_base_model_meta.json"
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
