@@ -375,6 +375,30 @@ def _build_siim_records(positive_only: bool = False) -> list[dict]:
                     dcm_files[p.stem] = p
     log.info("SIIM DICOM tarandı: %d dosya (%s)", len(dcm_files), dcm_search_dirs)
 
+    # CSV'deki ImageId'ler DICOM SOP UID formatında olabilir (1.2.276.0.7230010...)
+    # ama dosyalar ID_XXXXX.dcm olarak adlandırılmış olabilir.
+    # Eğer hiç eşleşme yoksa SOP UID → path haritası oluştur.
+    sample_ids = list(img_labels[id_col].astype(str).head(5))
+    needs_uid_map = not any(dcm_files.get(s) for s in sample_ids)
+    if needs_uid_map:
+        log.info("ImageId formatı dosya adıyla eşleşmiyor — SOP UID taraması başlıyor (%d dosya)…", len(dcm_files))
+        try:
+            import pydicom
+            uid_map: dict[str, Path] = {}
+            for dcm_path in tqdm(list(dcm_files.values()), desc="SOP UID tarama", leave=False):
+                try:
+                    ds  = pydicom.dcmread(str(dcm_path), stop_before_pixels=True)
+                    uid = str(getattr(ds, "SOPInstanceUID", "")).strip()
+                    if uid:
+                        uid_map[uid] = dcm_path
+                except Exception:
+                    pass
+            if uid_map:
+                dcm_files.update(uid_map)
+                log.info("SOP UID eşleştirme: %d UID eklendi", len(uid_map))
+        except ImportError:
+            log.warning("pydicom kurulu değil — SOP UID eşleştirme atlandı")
+
     mask_dir = MASKS_DIR / "siim"
     records  = []
 
