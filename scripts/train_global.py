@@ -205,7 +205,9 @@ def main() -> None:
         "num_folds":            args.num_folds,
         "dice_weight":          args.dice_weight,
         "checkpoint_dir":       ckpt_dir,
-        "results_csv":          str(RESULTS_DIR / "global_kfold_results.csv"),
+        "results_csv":          str(Path(args.checkpoint_dir) / "global_kfold_results.csv")
+                                if args.checkpoint_dir
+                                else str(RESULTS_DIR / "global_kfold_results.csv"),
         "wandb_project":        "Pneumothorax-Detection",
         "wandb_entity":         "ahmet-ai-t-bi-tak",
         "wandb_group":          f"global-pretrain-{args.encoder}",

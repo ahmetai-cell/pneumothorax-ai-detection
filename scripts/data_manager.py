@@ -378,10 +378,20 @@ def _build_siim_records(positive_only: bool = False) -> list[dict]:
 
 def _build_nih_records(positive_only: bool = False) -> list[dict]:
     """NIH ChestX-ray14 dizininden kayıt listesi oluşturur."""
+    # Kaggle dataset'i v2020 versiyonunu kullanabilir
     label_csv = NIH_DIR / "Data_Entry_2017.csv"
     if not label_csv.exists():
-        log.warning("NIH Data_Entry_2017.csv bulunamadı, atlanıyor.")
-        return []
+        for alt in [
+            NIH_DIR / "Data_Entry_2017_v2020.csv",
+            NIH_DIR / "Data_Entry_2017_v2020updated.csv",
+        ]:
+            if alt.exists():
+                label_csv = alt
+                log.info("NIH label CSV (alternatif): %s", alt.name)
+                break
+        else:
+            log.warning("NIH Data_Entry_2017.csv bulunamadı, atlanıyor.")
+            return []
 
     df = pd.read_csv(label_csv)
     df["is_pneumo"] = df["Finding Labels"].str.contains("Pneumothorax", na=False).astype(int)
