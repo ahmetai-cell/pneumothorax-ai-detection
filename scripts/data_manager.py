@@ -354,13 +354,26 @@ def _build_siim_records(positive_only: bool = False) -> list[dict]:
     if positive_only:
         img_labels = img_labels[img_labels["is_pneumo"] == 1]
 
-    # DICOM dosyalarını bul (followlinks=True: symlink dizinleri de tara)
+    # DICOM dosyalarını bul
+    # .dcm_dir dosyası varsa (Kaggle symlink bypass), oradan tara
+    dcm_pointer = SIIM_DIR / ".dcm_dir"
+    dcm_search_dirs = []
+    if dcm_pointer.exists():
+        for line in dcm_pointer.read_text().splitlines():
+            line = line.strip()
+            if line and Path(line).exists():
+                dcm_search_dirs.append(line)
+    if not dcm_search_dirs:
+        dcm_search_dirs.append(str(SIIM_DIR))
+
     dcm_files: dict[str, Path] = {}
-    for root, dirs, files in os.walk(str(SIIM_DIR), followlinks=True):
-        for f in files:
-            if f.endswith(".dcm"):
-                p = Path(root) / f
-                dcm_files[p.stem] = p
+    for search_dir in dcm_search_dirs:
+        for root, dirs, files in os.walk(search_dir, followlinks=True):
+            for f in files:
+                if f.endswith(".dcm"):
+                    p = Path(root) / f
+                    dcm_files[p.stem] = p
+    log.info("SIIM DICOM tarandı: %d dosya (%s)", len(dcm_files), dcm_search_dirs)
 
     mask_dir = MASKS_DIR / "siim"
     records  = []
