@@ -250,7 +250,12 @@ def convert_rle_to_nrrd(
     mask_out_dir = mask_out_dir or MASKS_DIR / "siim"
     _makedirs(mask_out_dir)
 
-    rle_csv = next(siim_dir.glob("*train-rle*.csv"), None) or (siim_dir / "train-rle.csv")
+    rle_csv = (
+        next(siim_dir.glob("*train-rle*.csv"), None)
+        or next(siim_dir.glob("stage_2_train.csv"), None)
+        or next(siim_dir.glob("**/stage_2_train.csv"), None)
+        or (siim_dir / "train-rle.csv")
+    )
     if not rle_csv.exists():
         log.error("train-rle.csv bulunamadı: %s", rle_csv)
         return
@@ -324,7 +329,11 @@ def extract_dicom_meta(dcm_path: Path) -> dict:
 
 def _build_siim_records(positive_only: bool = False) -> list[dict]:
     """SIIM-ACR dizininden kayıt listesi oluşturur."""
-    rle_csv = next(SIIM_DIR.glob("*train-rle*.csv"), None)
+    rle_csv = (
+        next(SIIM_DIR.glob("*train-rle*.csv"), None)
+        or next(SIIM_DIR.glob("stage_2_train.csv"), None)
+        or next(SIIM_DIR.glob("**/stage_2_train.csv"), None)
+    )
     if not rle_csv:
         log.warning("SIIM train-rle.csv bulunamadı, atlanıyor.")
         return []
