@@ -286,7 +286,7 @@ def log_error_analysis(
             rec["type"],
             round(rec["prob"],  4),
             round(rec["dice"],  4),
-            round(rec["hd95"],  2) if rec["hd95"] >= 0 else "inf",
+            round(rec["hd95"],  2) if rec["hd95"] >= 0 else None,
             rec["view_position"],
             rec["manufacturer"],
             rec["kvp"],

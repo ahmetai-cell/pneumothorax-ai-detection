@@ -6,6 +6,9 @@ Stratified K-Fold + WeightedRandomSampler + ReduceLROnPlateau
 TÜBİTAK 2209-A | Ahmet Demir
 """
 
+import json
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.optim as optim
@@ -174,7 +177,20 @@ def train_kfold(dataset, config: dict) -> list[dict]:
     labels = [int(dataset[i][2].item()) for i in range(len(dataset))]
     skf    = StratifiedKFold(n_splits=num_folds, shuffle=True, random_state=42)
 
+    # ── Resume: tamamlanan fold'ları yükle ───────────────────────────────────
+    progress_file  = Path(config["checkpoint_dir"]) / "fold_progress.json"
+    completed_folds: set[int] = set()
     fold_results: list[dict] = []
+
+    if config.get("resume") and progress_file.exists():
+        state = json.loads(progress_file.read_text())
+        completed_folds = set(state.get("completed_folds", []))
+        fold_results    = state.get("fold_results", [])
+        # Kayıtlı grup adını koru
+        if state.get("group_name"):
+            config["wandb_group"] = state["group_name"]
+            group_name = state["group_name"]
+        print(f"\n  [RESUME] Tamamlanan fold'lar: {sorted(completed_folds)}")
 
     for fold, (train_idx, val_idx) in enumerate(
         skf.split(np.zeros(len(labels)), labels), start=1
@@ -182,6 +198,11 @@ def train_kfold(dataset, config: dict) -> list[dict]:
         print(f"\n{'='*60}")
         print(f"  FOLD {fold}/{num_folds}  —  Eğitim: {len(train_idx)}  Val: {len(val_idx)}")
         print(f"{'='*60}")
+
+        # ── Daha önce tamamlandıysa atla ──────────────────────────────────
+        if fold in completed_folds:
+            print(f"  [RESUME] Fold {fold} zaten tamamlanmış, atlanıyor.")
+            continue
 
         # ── W&B: fold başına ayrı run ─────────────────────────────────────
         run = init_fold_run(config, fold, num_folds)
@@ -289,13 +310,6 @@ def train_kfold(dataset, config: dict) -> list[dict]:
                 torch.save(model.state_dict(), ckpt_path)
                 print(f"  ✓ Checkpoint: {ckpt_path}  (Dice: {best['dice']:.4f})")
 
-        # ── Fold sonu: görsel hata analizi ────────────────────────────────
-        print(f"\n  [W&B] Fold {fold} hata analizi yükleniyor…")
-        model.load_state_dict(torch.load(ckpt_path, map_location=device))
-        log_error_analysis(
-            model, dataset, list(val_idx), device, fold=fold, n_cases=5
-        )
-
         # Fold sonuçlarını kaydet
         append_fold_result(
             fold_results, fold,
@@ -304,6 +318,24 @@ def train_kfold(dataset, config: dict) -> list[dict]:
         )
         fold_results[-1]["best_specificity"] = best["specificity"]
         fold_results[-1]["group"]            = group_name
+
+        # ── Progress kaydet (resume desteği) — hata analizinden önce ─────
+        completed_folds.add(fold)
+        progress_file.write_text(json.dumps({
+            "group_name":      group_name,
+            "completed_folds": sorted(completed_folds),
+            "fold_results":    fold_results,
+        }, indent=2, ensure_ascii=False))
+
+        # ── Fold sonu: görsel hata analizi (opsiyonel, çökmemeli) ─────────
+        try:
+            print(f"\n  [W&B] Fold {fold} hata analizi yükleniyor…")
+            model.load_state_dict(torch.load(ckpt_path, map_location=device))
+            log_error_analysis(
+                model, dataset, list(val_idx), device, fold=fold, n_cases=5
+            )
+        except Exception as e:
+            print(f"  [W&B] Hata analizi atlandı: {e}")
 
         if run:
             run.finish()
