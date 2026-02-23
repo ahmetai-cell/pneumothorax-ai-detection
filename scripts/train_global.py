@@ -88,6 +88,8 @@ def parse_args() -> argparse.Namespace:
                    help="Yalnızca pnömotoraks pozitif vakaları al (sınırsız negatif)")
     p.add_argument("--checkpoint_dir", default=None,
                    help="Checkpoint kayıt dizini (varsayılan: proje içi checkpoints/)")
+    p.add_argument("--resume",         action="store_true",
+                   help="fold_progress.json'dan kaldığı yerden devam et")
     return p.parse_args()
 
 
@@ -211,6 +213,7 @@ def main() -> None:
         "wandb_project":        "Pneumothorax-Detection",
         "wandb_entity":         "ahmet-ai-t-bi-tak",
         "wandb_group":          f"global-pretrain-{args.encoder}",
+        "resume":               args.resume,
         "hard_negative_mining": True,
         "hnm_interval":         3,
         "hnm_threshold":        0.4,

@@ -1,0 +1,14 @@
+{
+  "id": "salihekmen/kaggle-train",
+  "title": "kaggle-train",
+  "code_file": "kaggle_train.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["jesperdramsch/siim-acr-pneumothorax-segmentation-data"],
+  "competition_sources": ["siim-acr-pneumothorax-segmentation"],
+  "kernel_sources": []
+}
