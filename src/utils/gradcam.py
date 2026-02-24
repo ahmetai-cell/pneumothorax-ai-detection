@@ -78,7 +78,8 @@ def generate_gradcam_captum(
     # (1, C, h, w) → upsample → (1, 1, H, W)
     upsampled = LayerAttribution.interpolate(attribution, x.shape[2:])
 
-    cam = upsampled.squeeze().detach().cpu().numpy()
+    # squeeze(0): batch boyutunu kaldır → (C, H, W); mean(0): kanalları ortala → (H, W)
+    cam = upsampled.squeeze(0).mean(0).detach().cpu().numpy()
     cam = np.maximum(cam, 0)  # ReLU
     if cam.max() > 1e-8:
         cam = cam / cam.max()
@@ -121,7 +122,7 @@ def generate_integrated_gradients(
         x, baselines=baseline, n_steps=n_steps, return_convergence_delta=True
     )
 
-    attr_map = attributions.squeeze().detach().cpu().numpy()
+    attr_map = attributions.squeeze(0).mean(0).detach().cpu().numpy()
     attr_map = np.abs(attr_map)  # büyüklük önemli, işaret değil
     if attr_map.max() > 1e-8:
         attr_map = attr_map / attr_map.max()

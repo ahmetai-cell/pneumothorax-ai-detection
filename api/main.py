@@ -6,13 +6,16 @@ Başlatma:
     uvicorn api.main:app --reload --port 8000
 
 Endpointler:
-    POST /predict   — görüntü yükle, analiz et, sonuç döndür
-    GET  /health    — servis sağlık kontrolü
+    POST /predict       — görüntü yükle, analiz et, sonuç döndür
+    POST /predict/tta   — TTA ile daha güvenilir analiz
+    GET  /health        — servis sağlık kontrolü
+    GET  /results       — K-fold metrik sonuçları
 
 TÜBİTAK 2209-A | Ahmet Demir
 """
 
 import base64
+import csv
 import io
 import os
 from pathlib import Path
@@ -53,7 +56,7 @@ app.add_middleware(
 
 MODEL_PATH = os.getenv("MODEL_PATH", "results/checkpoints/best_model.pth")
 IMG_SIZE = 512
-THRESHOLD = 0.5
+THRESHOLD = 0.3
 
 _model: PneumothoraxModel | None = None
 _device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,10 +96,13 @@ def read_upload_as_gray(upload: UploadFile) -> np.ndarray:
             tmp.write(content)
             tmp_path = tmp.name
         try:
-            gray, _, _ = load_image.__module__ and None  # tip kontrolü için
             import pydicom as pd_
             ds = pd_.dcmread(tmp_path)
             arr = ds.pixel_array.astype(np.float32)
+            # Lung window normalization: clamp to [-1500, 500] HU range
+            if hasattr(ds, "RescaleSlope") and hasattr(ds, "RescaleIntercept"):
+                arr = arr * float(ds.RescaleSlope) + float(ds.RescaleIntercept)
+                arr = np.clip(arr, -1500, 500)
             arr = ((arr - arr.min()) / (arr.max() - arr.min() + 1e-8) * 255).astype(np.uint8)
             if arr.ndim == 3:
                 arr = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
@@ -206,7 +212,10 @@ async def predict(file: UploadFile = File(...)):
     # Segmentasyon maskesini orijinal boyuta getir
     seg_resized = cv2.resize(seg_mask, (orig_w, orig_h))
     binary_mask = (seg_resized > THRESHOLD).astype(np.uint8) * 255
-    seg_overlay = overlay_mask_on_image(gray, binary_mask, alpha=0.4, color_bgr=(0, 60, 220))
+    seg_overlay = overlay_mask_on_image(gray, binary_mask, alpha=0.4, color_bgr=(0, 200, 0))
+
+    # Orijinal görüntü (grayscale → BGR)
+    original_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     # Karar
     has_ptx = cls_prob >= THRESHOLD
@@ -219,6 +228,7 @@ async def predict(file: UploadFile = File(...)):
         "has_pneumothorax":    has_ptx,
         "probability":         round(cls_prob, 4),
         "diagnosis":           diagnosis,
+        "original_image":      ndarray_to_base64(original_bgr),
         "gradcam_image":       ndarray_to_base64(gradcam_bgr),
         "segmentation_image":  ndarray_to_base64(seg_overlay),
     })
@@ -262,8 +272,10 @@ async def predict_with_tta(file: UploadFile = File(...)):
     prob     = tta_result["prob_mean"]
     has_ptx  = prob >= THRESHOLD
     seg_overlay = overlay_mask_on_image(
-        gray, tta_result["seg_binary"], alpha=0.4, color_bgr=(0, 60, 220)
+        gray, tta_result["seg_binary"], alpha=0.4, color_bgr=(0, 200, 0)
     )
+
+    original_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     try:
         gradcam_bgr, _ = generate_gradcam_result(model, gray, img_size=IMG_SIZE)
@@ -283,6 +295,53 @@ async def predict_with_tta(file: UploadFile = File(...)):
         "uncertainty":        uncertainty_label(tta_result),
         "is_uncertain":       tta_result["is_uncertain"],
         "diagnosis":          diagnosis,
+        "original_image":     ndarray_to_base64(original_bgr),
         "gradcam_image":      ndarray_to_base64(gradcam_bgr),
         "segmentation_image": ndarray_to_base64(seg_overlay),
     })
+
+
+@app.get("/results", summary="K-fold cross validation sonuçları")
+async def get_results():
+    """
+    `results/global_kfold_results.csv` dosyasından fold metriklerini döndürür.
+
+    Dönen değerler:
+    - `folds`   : Her fold için metrik satırları
+    - `summary` : Tüm foldlar üzerinden ortalama ve std
+    """
+    csv_path = Path("results/global_kfold_results.csv")
+    if not csv_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Sonuç dosyası bulunamadı: results/global_kfold_results.csv",
+        )
+
+    rows = []
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Sayısal alanları float'a çevir
+            converted = {}
+            for k, v in row.items():
+                try:
+                    converted[k] = float(v)
+                except (ValueError, TypeError):
+                    converted[k] = v
+            rows.append(converted)
+
+    if not rows:
+        return JSONResponse({"folds": [], "summary": {}})
+
+    # Sayısal sütunlar için özet istatistik
+    numeric_keys = [k for k, v in rows[0].items() if isinstance(v, float)]
+    summary = {}
+    for key in numeric_keys:
+        vals = [r[key] for r in rows if isinstance(r.get(key), float)]
+        if vals:
+            summary[key] = {
+                "mean": round(float(np.mean(vals)), 4),
+                "std":  round(float(np.std(vals)), 4),
+            }
+
+    return JSONResponse({"folds": rows, "summary": summary})

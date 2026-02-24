@@ -8,7 +8,7 @@
   "enable_gpu": true,
   "enable_tpu": false,
   "enable_internet": true,
-  "dataset_sources": ["jesperdramsch/siim-acr-pneumothorax-segmentation-data"],
+  "dataset_sources": ["jesperdramsch/siim-acr-pneumothorax-segmentation-data", "vbookshelf/pneumothorax-chest-xray-images-and-masks"],
   "competition_sources": ["siim-acr-pneumothorax-segmentation"],
   "kernel_sources": []
 }

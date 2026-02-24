@@ -4,6 +4,7 @@ Global Veri Entegrasyon ve Standardizasyon Yöneticisi
 Desteklenen Kaynaklar:
   - SIIM-ACR Pneumothorax Segmentation (Kaggle) — RLE maskeli DICOM
   - ChestX-ray14 (NIH / Kaggle)             — PNG, sınıflandırma etiketi
+  - vbookshelf/pneumothorax-chest-xray-images-and-masks — PNG görüntü + PNG maske
   - DEU Yerel                                — DICOM + NRRD maske
 
 Komutlar:
@@ -56,6 +57,7 @@ MASKS_DIR       = ROOT / "data" / "masks"
 
 SIIM_DIR        = RAW_DIR / "global" / "siim"
 NIH_DIR         = RAW_DIR / "global" / "nih"
+VBOOKSHELF_DIR  = RAW_DIR / "global" / "vbookshelf"
 DEU_DIR         = RAW_DIR / "local" / "deu"
 
 MASTER_MANIFEST = PROCESSED_DIR / "master_manifest.csv"
@@ -216,6 +218,8 @@ def rle_to_mask(rle_str: str, height: int = SIIM_IMG_SIZE, width: int = SIIM_IMG
 
     flat   = np.zeros(height * width, dtype=np.uint8)
     tokens = list(map(int, rle_str.split()))
+    if len(tokens) % 2 != 0:
+        tokens = tokens[:-1]   # bozuk RLE — son token'ı at
     starts  = tokens[0::2]
     lengths = tokens[1::2]
 
@@ -491,6 +495,64 @@ def _build_nih_records(positive_only: bool = False) -> list[dict]:
     return records
 
 
+def _build_vbookshelf_records(positive_only: bool = False) -> list[dict]:
+    """
+    vbookshelf/pneumothorax-chest-xray-images-and-masks dataset'inden kayıt listesi oluşturur.
+
+    Yapı:
+      png_images/{id}_{set}_{target}.png   — görüntü (1024×1024)
+      png_masks/{id}_{set}_{target}.png    — maske   (1024×1024, sadece pozitif vakalar)
+
+    target=1 → pnömotoraks, target=0 → normal
+    Maske dosyası yoksa (negatif vakalar) mask_path = "N/A"
+    """
+    img_dir  = VBOOKSHELF_DIR / "png_images"
+    mask_dir = VBOOKSHELF_DIR / "png_masks"
+
+    if not img_dir.exists():
+        log.warning("vbookshelf png_images dizini bulunamadı (%s), atlanıyor.", img_dir)
+        return []
+
+    records = []
+    for img_path in tqdm(sorted(img_dir.glob("*.png")), desc="vbookshelf manifest"):
+        # Dosya adı: {id}_{set}_{target}.png
+        stem   = img_path.stem          # örn. "4_train_1"
+        parts  = stem.rsplit("_", 1)    # ["4_train", "1"]
+        if len(parts) != 2:
+            log.debug("Beklenmeyen dosya adı formatı: %s", img_path.name)
+            continue
+
+        try:
+            is_pneumo = int(parts[1])   # 0 veya 1
+        except ValueError:
+            log.debug("Target parse edilemedi: %s", img_path.name)
+            continue
+
+        if positive_only and is_pneumo == 0:
+            continue
+
+        # Maske: aynı dosya adı, png_masks dizininde
+        mask_path = mask_dir / img_path.name
+        mask_str  = str(mask_path) if mask_path.exists() else "N/A"
+
+        records.append({
+            "source":        "VBOOKSHELF",
+            "img_path":      str(img_path),
+            "mask_path":     mask_str,
+            "is_pneumo":     is_pneumo,
+            "split":         parts[0].split("_")[-1] if "_" in parts[0] else "",
+            "patient_id":    parts[0],
+            "view_position": "PA",
+            "pixel_spacing": "N/A",
+            "img_rows":      1024,
+            "img_cols":      1024,
+        })
+
+    pos = sum(r["is_pneumo"] for r in records)
+    log.info("VBOOKSHELF: %d kayıt (pozitif: %d, negatif: %d)", len(records), pos, len(records) - pos)
+    return records
+
+
 def _build_deu_records() -> list[dict]:
     """
     DEU yerel veri manifest'ini yükler.
@@ -569,6 +631,7 @@ def build_manifest(positive_only: bool = False) -> pd.DataFrame:
     all_records.extend(_build_deu_records())
     all_records.extend(_build_siim_records(positive_only))
     all_records.extend(_build_nih_records(positive_only))
+    all_records.extend(_build_vbookshelf_records(positive_only))
 
     if not all_records:
         log.error("Hiç kayıt bulunamadı. Veri dizinlerini kontrol edin.")
@@ -886,7 +949,7 @@ def print_summary() -> None:
     print("\n" + "═" * 60)
     print("  MASTER MANIFEST ÖZET")
     print("═" * 60)
-    for src in ["DEU", "SIIM", "NIH"]:
+    for src in ["DEU", "SIIM", "NIH", "VBOOKSHELF"]:
         grp  = df[df["source"] == src]
         n    = len(grp)
         if n == 0:

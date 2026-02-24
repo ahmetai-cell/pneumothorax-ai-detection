@@ -108,7 +108,7 @@ def predict_tta(
     prob_std  = float(probs.std())
 
     # Segmentasyon ortalaması → orijinal boyuta yeniden ölçekli
-    seg_mean = seg_probs.mean(axis=0).squeeze()   # (H, W)
+    seg_mean = seg_probs.mean(axis=0)[0]   # (5,1,H,W) → (1,H,W) → (H,W)
     seg_resized = cv2.resize(
         seg_mean, (gray_image.shape[1], gray_image.shape[0])
     )
