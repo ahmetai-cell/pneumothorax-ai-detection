@@ -90,6 +90,8 @@ def parse_args() -> argparse.Namespace:
                    help="Checkpoint kayıt dizini (varsayılan: proje içi checkpoints/)")
     p.add_argument("--resume",         action="store_true",
                    help="fold_progress.json'dan kaldığı yerden devam et")
+    p.add_argument("--save_every",     type=int, default=50,
+                   help="Her N epoch'ta ara checkpoint kaydet (0 = devre dışı)")
     return p.parse_args()
 
 
@@ -220,6 +222,7 @@ def main() -> None:
         "hnm_multiplier":       3.0,
         "img_size":             args.img_size,
         "sources":              args.sources,
+        "save_every":           args.save_every,
     }
 
     # ── Eğitim ────────────────────────────────────────────────────────────────

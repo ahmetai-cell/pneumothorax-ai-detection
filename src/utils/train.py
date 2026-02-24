@@ -243,6 +243,7 @@ def train_kfold(dataset, config: dict) -> list[dict]:
         ckpt_path    = f"{config['checkpoint_dir']}/fold{fold}_best.pth"
         hnm_enabled  = config.get("hard_negative_mining", True)
         hnm_interval = config.get("hnm_interval", 3)
+        save_every   = config.get("save_every", 0)   # 0 = devre dışı
 
         for epoch in range(1, config["epochs"] + 1):
             print(f"\n  Epoch {epoch}/{config['epochs']}")
@@ -309,6 +310,12 @@ def train_kfold(dataset, config: dict) -> list[dict]:
                 })
                 torch.save(model.state_dict(), ckpt_path)
                 print(f"  ✓ Checkpoint: {ckpt_path}  (Dice: {best['dice']:.4f})")
+
+            # ── Periyodik checkpoint (her save_every epoch'ta bir) ────
+            if save_every > 0 and epoch % save_every == 0:
+                periodic_path = f"{config['checkpoint_dir']}/fold{fold}_epoch{epoch}.pth"
+                torch.save(model.state_dict(), periodic_path)
+                print(f"  💾 Periyodik kayıt: fold{fold}_epoch{epoch}.pth  (Dice: {val_metrics['dice']:.4f})")
 
         # Fold sonuçlarını kaydet
         append_fold_result(
