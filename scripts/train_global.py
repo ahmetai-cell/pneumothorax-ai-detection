@@ -214,7 +214,7 @@ def main() -> None:
                                 else str(RESULTS_DIR / "global_kfold_results.csv"),
         "wandb_project":        "Pneumothorax-Detection",
         "wandb_entity":         "ahmet-ai-t-bi-tak",
-        "wandb_group":          f"global-pretrain-{args.encoder}",
+        "wandb_group":          f"global-pretrain-{args.encoder}-{__import__('datetime').date.today().strftime('%Y%m%d')}",
         "resume":               args.resume,
         "hard_negative_mining": True,
         "hnm_interval":         3,
