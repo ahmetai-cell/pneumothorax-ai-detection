@@ -61,8 +61,9 @@ NIH_DIR         = RAW_DIR / "global" / "nih"
 VBOOKSHELF_DIR  = RAW_DIR / "global" / "vbookshelf"
 DEU_DIR         = RAW_DIR / "local" / "deu"
 
-MASTER_MANIFEST = PROCESSED_DIR / "master_manifest.csv"
-QC_LOG          = PROCESSED_DIR / "quality_check.csv"
+MASTER_MANIFEST   = PROCESSED_DIR / "master_manifest.csv"
+QC_LOG            = PROCESSED_DIR / "quality_check.csv"
+SIIM_CKPT         = PROCESSED_DIR / ".siim_manifest_ckpt.csv"
 
 # SIIM-ACR görüntü boyutu (orijinal: 1024×1024)
 SIIM_IMG_SIZE   = 1024
@@ -447,11 +448,34 @@ def _build_siim_records(positive_only: bool = False) -> list[dict]:
     log.info("DCM dosya key örnekleri: %s", sample_dcm_keys)
 
     mask_dir = MASKS_DIR / "siim"
-    records  = []
+
+    # ── Checkpoint: kaldığı yerden devam ─────────────────────────────────────
+    records: list[dict] = []
+    done_ids: set[str]  = set()
+    if SIIM_CKPT.exists():
+        try:
+            ckpt_df  = pd.read_csv(SIIM_CKPT)
+            records  = ckpt_df.to_dict("records")
+            done_ids = set(
+                Path(r["img_path"]).stem for r in records
+                if r.get("source") == "SIIM"
+            )
+            log.info("SIIM checkpoint bulundu — %d kayıt yüklendi, devam ediliyor…", len(records))
+        except Exception as e:
+            log.warning("Checkpoint okunamadı (%s), sıfırdan başlanıyor.", e)
+            records  = []
+            done_ids = set()
+
+    CKPT_INTERVAL = 500   # her 500 yeni kayıtta bir kaydet
+    new_count     = 0
 
     for _, row in tqdm(img_labels.iterrows(), total=len(img_labels), desc="SIIM manifest"):
         img_id = str(row[id_col])
-        dcm    = dcm_files.get(img_id)
+
+        if img_id in done_ids:
+            continue  # zaten işlendi
+
+        dcm = dcm_files.get(img_id)
         if dcm is None:
             log.debug("DICOM bulunamadı: %s", img_id)
             continue
@@ -460,13 +484,24 @@ def _build_siim_records(positive_only: bool = False) -> list[dict]:
         meta      = extract_dicom_meta(dcm)
 
         records.append({
-            "source":        "SIIM",
-            "img_path":      str(dcm),
-            "mask_path":     str(mask_path) if mask_path.exists() else "N/A",
-            "is_pneumo":     int(row["is_pneumo"]),
-            "split":         "",
+            "source":    "SIIM",
+            "img_path":  str(dcm),
+            "mask_path": str(mask_path) if mask_path.exists() else "N/A",
+            "is_pneumo": int(row["is_pneumo"]),
+            "split":     "",
             **meta,
         })
+        done_ids.add(img_id)
+        new_count += 1
+
+        if new_count % CKPT_INTERVAL == 0:
+            pd.DataFrame(records).to_csv(SIIM_CKPT, index=False)
+            log.info("SIIM checkpoint kaydedildi: %d kayıt", len(records))
+
+    # Tamamlandı — checkpoint sil
+    if SIIM_CKPT.exists():
+        SIIM_CKPT.unlink()
+        log.info("SIIM checkpoint temizlendi.")
 
     log.info("SIIM: %d kayıt (pozitif: %d)", len(records), sum(r["is_pneumo"] for r in records))
     return records
