@@ -213,7 +213,7 @@ def main() -> None:
                                 if args.checkpoint_dir
                                 else str(RESULTS_DIR / "global_kfold_results.csv"),
         "wandb_project":        "Pneumothorax-Detection",
-        "wandb_entity":         "salihekmen4495",
+        "wandb_entity":         "ahmet-ai-t-bi-tak",
         "wandb_group":          f"global-pretrain-{args.encoder}",
         "resume":               args.resume,
         "hard_negative_mining": True,
