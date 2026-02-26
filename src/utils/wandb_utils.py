@@ -37,7 +37,7 @@ def init_fold_run(config: dict, fold: int, num_folds: int):
 
     run = wandb.init(
         project=config.get("wandb_project", "Pneumothorax-Detection"),
-        entity=config.get("wandb_entity",  "ahmet-ai-t-bi-tak"),
+        entity=config.get("wandb_entity",  "salihekmen4495"),
         name=f"fold-{fold}-of-{num_folds}",
         group=config.get("wandb_group", "kfold-run"),  # tüm foldları grupla
         reinit=True,
@@ -326,7 +326,7 @@ def log_kfold_summary(fold_results: list[dict]) -> None:
 
     run = wandb.init(
         project="Pneumothorax-Detection",
-        entity="ahmet-ai-t-bi-tak",
+        entity="salihekmen4495",
         name="kfold-summary",
         group=fold_results[0].get("group", "kfold-run"),
         reinit=True,
