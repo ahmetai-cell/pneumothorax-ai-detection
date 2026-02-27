@@ -217,7 +217,7 @@ def main() -> None:
         "wandb_group":          f"global-pretrain-{args.encoder}-{__import__('datetime').date.today().strftime('%Y%m%d')}",
         "resume":               args.resume,
         "hard_negative_mining": True,
-        "hnm_interval":         3,
+        "hnm_interval":         10,
         "hnm_threshold":        0.4,
         "hnm_multiplier":       3.0,
         "img_size":             args.img_size,

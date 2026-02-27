@@ -31,7 +31,16 @@ class CombinedLoss(nn.Module):
         self.bce_w = bce_weight
 
     def forward(self, seg_pred, seg_target, cls_pred, cls_target):
-        seg_loss = self.dice_w * self.dice(seg_pred, seg_target) + \
-                   self.bce_w * self.bce(seg_pred, seg_target)
+        # Seg loss sadece pozitif örneklere uygula (maskesi olan vakalar).
+        # Negatif örnekleri dahil etmek modeli "her yeri sıfır predict et"
+        # stratejisine iter ve Dice tamamen çöker.
+        pos = cls_target.bool()
+        if pos.any():
+            seg_loss = (
+                self.dice_w * self.dice(seg_pred[pos], seg_target[pos]) +
+                self.bce_w  * self.bce(seg_pred[pos],  seg_target[pos])
+            )
+        else:
+            seg_loss = seg_pred.sum() * 0.0   # gradyan akışı korunsun
         cls_loss = self.bce(cls_pred.squeeze(), cls_target.float())
         return seg_loss + 0.3 * cls_loss
