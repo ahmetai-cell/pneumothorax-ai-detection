@@ -101,7 +101,7 @@ def train_epoch(model, loader, optimizer, criterion, device,
         optimizer.zero_grad()
 
         # Mixed Precision (AMP): A100 Tensor Core'larını kullanır, 2-3x hız
-        with torch.cuda.amp.autocast(enabled=scaler is not None):
+        with torch.amp.autocast("cuda", enabled=scaler is not None):
             out       = model(images)
             seg_pred, cls_pred = out[0], out[1]
             aux_preds = out[2] if len(out) == 3 else None
@@ -179,7 +179,7 @@ def train_kfold(dataset, config: dict) -> list[dict]:
     """
     device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Mixed Precision: CUDA varsa GradScaler aktif (A100'de 2-3x hız)
-    scaler    = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
+    scaler    = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
     num_folds = config.get("num_folds", 5)
     criterion = CombinedLoss(
         dice_weight=config.get("dice_weight", 0.5),
