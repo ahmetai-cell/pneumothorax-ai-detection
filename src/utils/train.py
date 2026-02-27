@@ -84,7 +84,12 @@ def _compute_cls_metrics(
 
 # ── Epoch fonksiyonları ───────────────────────────────────────────────────────
 
-def train_epoch(model, loader, optimizer, criterion, device) -> tuple[float, float]:
+def train_epoch(model, loader, optimizer, criterion, device,
+                scaler=None) -> tuple[float, float]:
+    """
+    scaler: torch.cuda.amp.GradScaler — A100'de Mixed Precision için.
+    None geçilirse standart FP32 eğitim yapılır.
+    """
     model.train()  # deep supervision sadece training modunda aktif
     total_loss = total_dice = 0.0
 
@@ -94,12 +99,21 @@ def train_epoch(model, loader, optimizer, criterion, device) -> tuple[float, flo
         labels = labels.to(device)
 
         optimizer.zero_grad()
-        out      = model(images)
-        seg_pred, cls_pred = out[0], out[1]
-        aux_preds = out[2] if len(out) == 3 else None
-        loss = criterion(seg_pred, masks, cls_pred, labels, aux_preds)
-        loss.backward()
-        optimizer.step()
+
+        # Mixed Precision (AMP): A100 Tensor Core'larını kullanır, 2-3x hız
+        with torch.cuda.amp.autocast(enabled=scaler is not None):
+            out       = model(images)
+            seg_pred, cls_pred = out[0], out[1]
+            aux_preds = out[2] if len(out) == 3 else None
+            loss      = criterion(seg_pred, masks, cls_pred, labels, aux_preds)
+
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            optimizer.step()
 
         total_loss += loss.item()
         total_dice += dice_score(seg_pred, masks).item()
@@ -164,6 +178,8 @@ def train_kfold(dataset, config: dict) -> list[dict]:
         results_csv          (default "results/kfold_results.csv")
     """
     device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Mixed Precision: CUDA varsa GradScaler aktif (A100'de 2-3x hız)
+    scaler    = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
     num_folds = config.get("num_folds", 5)
     criterion = CombinedLoss(
         dice_weight=config.get("dice_weight", 0.5),
@@ -268,7 +284,7 @@ def train_kfold(dataset, config: dict) -> list[dict]:
             print(f"\n  Epoch {epoch}/{config['epochs']}")
 
             train_loss, train_dice = train_epoch(
-                model, train_loader, optimizer, criterion, device
+                model, train_loader, optimizer, criterion, device, scaler
             )
             val_metrics = val_epoch(model, val_loader, criterion, device)
             scheduler.step(val_metrics["loss"])

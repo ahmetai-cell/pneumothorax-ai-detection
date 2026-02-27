@@ -84,8 +84,12 @@ class PneumothoraxModel(nn.Module):
         cls_out     = self.classifier(features[-1])
 
         if self.deep_supervision and self.training:
+            # Auxiliary head'ler SADECE eğitimde aktif.
+            # model.eval() çağrıldığı anda (inference) self.training=False olur
+            # → bu blok çalışmaz, GPU belleği harcanmaz, latency sıfır.
             aux1 = self.aux_head_1(features[-2], (H, W))
             aux2 = self.aux_head_2(features[-3], (H, W))
             return seg_out, cls_out, [aux1, aux2]
 
+        # Inference: sadece ana çıkışlar döner
         return seg_out, cls_out
