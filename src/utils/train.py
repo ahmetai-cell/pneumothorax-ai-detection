@@ -85,7 +85,7 @@ def _compute_cls_metrics(
 # ── Epoch fonksiyonları ───────────────────────────────────────────────────────
 
 def train_epoch(model, loader, optimizer, criterion, device) -> tuple[float, float]:
-    model.train()
+    model.train()  # deep supervision sadece training modunda aktif
     total_loss = total_dice = 0.0
 
     for images, masks, labels in tqdm(loader, desc="  Train", leave=False):
@@ -94,8 +94,10 @@ def train_epoch(model, loader, optimizer, criterion, device) -> tuple[float, flo
         labels = labels.to(device)
 
         optimizer.zero_grad()
-        seg_pred, cls_pred = model(images)
-        loss = criterion(seg_pred, masks, cls_pred, labels)
+        out      = model(images)
+        seg_pred, cls_pred = out[0], out[1]
+        aux_preds = out[2] if len(out) == 3 else None
+        loss = criterion(seg_pred, masks, cls_pred, labels, aux_preds)
         loss.backward()
         optimizer.step()
 

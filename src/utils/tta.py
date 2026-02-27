@@ -114,6 +114,14 @@ def predict_tta(
     )
     seg_binary = (seg_resized > seg_threshold).astype(np.uint8) * 255
 
+    # ── Gatekeeper: klasifikasyon "Yok" diyorsa maskeyi sıfırla ─────────────
+    # Bu, False Positive oranını dramatik düşürür:
+    # segmentasyon ne üretirse üretsin, cls head "negatif" dediyse maske = 0
+    CLS_THRESHOLD = 0.5
+    if prob_mean < CLS_THRESHOLD:
+        seg_binary = np.zeros_like(seg_binary)
+        seg_mean   = np.zeros_like(seg_mean)
+
     return {
         "prob_mean":    prob_mean,
         "prob_std":     prob_std,
@@ -121,6 +129,7 @@ def predict_tta(
         "seg_mean":     seg_mean,
         "seg_binary":   seg_binary,
         "is_uncertain": prob_std > 0.15,
+        "gatekeeper_active": prob_mean < CLS_THRESHOLD,
     }
 
 

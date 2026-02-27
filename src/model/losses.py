@@ -30,10 +30,9 @@ class CombinedLoss(nn.Module):
         self.dice_w = dice_weight
         self.bce_w = bce_weight
 
-    def forward(self, seg_pred, seg_target, cls_pred, cls_target):
+    def forward(self, seg_pred, seg_target, cls_pred, cls_target,
+                aux_preds: list | None = None):
         # Seg loss sadece pozitif örneklere uygula (maskesi olan vakalar).
-        # Negatif örnekleri dahil etmek modeli "her yeri sıfır predict et"
-        # stratejisine iter ve Dice tamamen çöker.
         pos = cls_target.bool()
         if pos.any():
             seg_loss = (
@@ -41,6 +40,19 @@ class CombinedLoss(nn.Module):
                 self.bce_w  * self.bce(seg_pred[pos],  seg_target[pos])
             )
         else:
-            seg_loss = seg_pred.sum() * 0.0   # gradyan akışı korunsun
+            seg_loss = seg_pred.sum() * 0.0
+
         cls_loss = self.bce(cls_pred.squeeze(), cls_target.float())
-        return seg_loss + 0.3 * cls_loss
+
+        # Deep Supervision: her auxiliary çıktıya 0.3 ağırlıkla ek loss
+        # (sadece pozitif örnekler, ana loss'la aynı mantık)
+        aux_loss = seg_pred.sum() * 0.0
+        if aux_preds and pos.any():
+            for aux in aux_preds:
+                aux_loss = aux_loss + (
+                    self.dice_w * self.dice(aux[pos], seg_target[pos]) +
+                    self.bce_w  * self.bce(aux[pos],  seg_target[pos])
+                )
+            aux_loss = aux_loss * 0.3
+
+        return seg_loss + 0.3 * cls_loss + aux_loss
