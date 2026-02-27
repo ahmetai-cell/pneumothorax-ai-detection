@@ -240,12 +240,29 @@ def train_kfold(dataset, config: dict) -> list[dict]:
         # ── Epoch döngüsü ─────────────────────────────────────────────────
         best = {"dice": 0.0, "iou": 0.0, "auc": 0.0,
                 "sensitivity": 0.0, "specificity": 0.0}
-        ckpt_path    = f"{config['checkpoint_dir']}/fold{fold}_best.pth"
+        ckpt_path        = f"{config['checkpoint_dir']}/fold{fold}_best.pth"
+        resume_ckpt_path = Path(config["checkpoint_dir"]) / f"fold{fold}_resume.pth"
         hnm_enabled  = config.get("hard_negative_mining", True)
         hnm_interval = config.get("hnm_interval", 3)
         save_every   = config.get("save_every", 0)   # 0 = devre dışı
 
-        for epoch in range(1, config["epochs"] + 1):
+        # ── Within-fold resume ────────────────────────────────────────────
+        start_epoch = 1
+        if resume_ckpt_path.exists():
+            try:
+                state = torch.load(resume_ckpt_path, map_location=device)
+                model.load_state_dict(state["model"])
+                optimizer.load_state_dict(state["optimizer"])
+                scheduler.load_state_dict(state["scheduler"])
+                best       = state["best"]
+                start_epoch = state["epoch"] + 1
+                print(f"  [RESUME] Fold {fold} epoch {start_epoch}'den devam "
+                      f"(best Dice: {best['dice']:.4f})")
+            except Exception as e:
+                print(f"  [RESUME] Resume checkpoint okunamadı ({e}), sıfırdan başlanıyor.")
+                start_epoch = 1
+
+        for epoch in range(start_epoch, config["epochs"] + 1):
             print(f"\n  Epoch {epoch}/{config['epochs']}")
 
             train_loss, train_dice = train_epoch(
@@ -311,6 +328,15 @@ def train_kfold(dataset, config: dict) -> list[dict]:
                 torch.save(model.state_dict(), ckpt_path)
                 print(f"  ✓ Checkpoint: {ckpt_path}  (Dice: {best['dice']:.4f})")
 
+            # ── Within-fold resume checkpoint (her epoch üzerine yaz) ──
+            torch.save({
+                "epoch":     epoch,
+                "model":     model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "best":      best,
+            }, resume_ckpt_path)
+
             # ── Periyodik checkpoint (her save_every epoch'ta bir) ────
             if save_every > 0 and epoch % save_every == 0:
                 periodic_path = f"{config['checkpoint_dir']}/fold{fold}_epoch{epoch}.pth"
@@ -325,6 +351,10 @@ def train_kfold(dataset, config: dict) -> list[dict]:
         )
         fold_results[-1]["best_specificity"] = best["specificity"]
         fold_results[-1]["group"]            = group_name
+
+        # ── Within-fold resume checkpoint temizle ─────────────────────────
+        if resume_ckpt_path.exists():
+            resume_ckpt_path.unlink()
 
         # ── Progress kaydet (resume desteği) — hata analizinden önce ─────
         completed_folds.add(fold)
