@@ -28,6 +28,11 @@ import torch
 import torch.nn.functional as F
 
 
+# ── Eşik değerleri — tek kaynak (api/main.py buradan import eder) ─────────────
+
+CLS_THRESHOLD: float = 0.5   # Sınıflandırma kararı eşiği
+
+
 # ── TTA dönüşüm tanımları ─────────────────────────────────────────────────────
 
 def _build_tta_variants(gray: np.ndarray, img_size: int = 512) -> list[np.ndarray]:
@@ -117,7 +122,6 @@ def predict_tta(
     # ── Gatekeeper: klasifikasyon "Yok" diyorsa maskeyi sıfırla ─────────────
     # Bu, False Positive oranını dramatik düşürür:
     # segmentasyon ne üretirse üretsin, cls head "negatif" dediyse maske = 0
-    CLS_THRESHOLD = 0.5
     if prob_mean < CLS_THRESHOLD:
         seg_binary = np.zeros_like(seg_binary)
         seg_mean   = np.zeros_like(seg_mean)
