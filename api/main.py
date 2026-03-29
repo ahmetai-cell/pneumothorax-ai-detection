@@ -31,7 +31,7 @@ from PIL import Image
 from src.model.unet import PneumothoraxModel
 from src.preprocessing.green_mask_extractor import load_image, overlay_mask_on_image
 from src.utils.gradcam import generate_gradcam_captum
-from src.utils.tta import predict_tta, uncertainty_label, CLS_THRESHOLD
+from src.utils.tta import predict_tta, uncertainty_label, CLS_THRESHOLD, SEG_THRESHOLD
 
 # ── Uygulama ──────────────────────────────────────────────────────────────────
 
@@ -210,14 +210,15 @@ async def predict(file: UploadFile = File(...)):
 
     # Segmentasyon maskesini orijinal boyuta getir
     seg_resized = cv2.resize(seg_mask, (orig_w, orig_h))
-    binary_mask = (seg_resized > CLS_THRESHOLD).astype(np.uint8) * 255
+    binary_mask = (seg_resized > SEG_THRESHOLD).astype(np.uint8) * 255
     seg_overlay = overlay_mask_on_image(gray, binary_mask, alpha=0.4, color_bgr=(0, 200, 0))
 
     # Orijinal görüntü (grayscale → BGR)
     original_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-    # Karar
-    has_ptx = cls_prob >= CLS_THRESHOLD
+    # Karar — hem cls_prob hem maske alanı kontrol edilir
+    mask_ratio = float(binary_mask.sum()) / (255 * orig_h * orig_w)
+    has_ptx = (cls_prob >= CLS_THRESHOLD) and (mask_ratio >= 0.005)
     if has_ptx:
         diagnosis = f"PNÖMOTORAKS TESPİT EDİLDİ (olasılık: {cls_prob:.1%})"
     else:
@@ -264,12 +265,14 @@ async def predict_with_tta(file: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail=f"Görüntü okunamadı: {e}")
 
     try:
-        tta_result = predict_tta(model, gray, img_size=IMG_SIZE, seg_threshold=CLS_THRESHOLD)
+        tta_result = predict_tta(model, gray, img_size=IMG_SIZE, seg_threshold=SEG_THRESHOLD)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTA hatası: {e}")
 
     prob     = tta_result["prob_mean"]
-    has_ptx  = prob >= CLS_THRESHOLD
+    seg_bin  = tta_result["seg_binary"]
+    mask_ratio = float(seg_bin.sum()) / (255 * gray.shape[0] * gray.shape[1])
+    has_ptx  = (prob >= CLS_THRESHOLD) and (mask_ratio >= 0.005)
     seg_overlay = overlay_mask_on_image(
         gray, tta_result["seg_binary"], alpha=0.4, color_bgr=(0, 200, 0)
     )
@@ -284,7 +287,7 @@ async def predict_with_tta(file: UploadFile = File(...)):
     if has_ptx:
         diagnosis = f"PNÖMOTORAKS TESPİT EDİLDİ — TTA olasılık: {prob:.1%}"
     else:
-        diagnosis = f"Normal — TTA olasılık: {prob:.1%}"
+        diagnosis = f"Normal — TTA olasılık: {prob:.1%} (maske alanı: {mask_ratio:.1%})"
 
     return JSONResponse({
         "has_pneumothorax":   has_ptx,

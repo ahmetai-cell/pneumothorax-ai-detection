@@ -31,6 +31,7 @@ import torch.nn.functional as F
 # ── Eşik değerleri — tek kaynak (api/main.py buradan import eder) ─────────────
 
 CLS_THRESHOLD: float = 0.5   # Sınıflandırma kararı eşiği
+SEG_THRESHOLD: float = 0.90  # Segmentasyon binary eşiği (over-segmentation önlemek için daha yüksek)
 
 
 # ── TTA dönüşüm tanımları ─────────────────────────────────────────────────────
