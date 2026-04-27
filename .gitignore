@@ -22,6 +22,14 @@ wandb/
 # Jupyter
 .ipynb_checkpoints/
 
+# Build / dist
+build/
+dist/
+*.onnx
+
+# Test cache
+.pytest_cache/
+
 # OS
 .DS_Store
 Thumbs.db

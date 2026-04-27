@@ -1,4 +1,4 @@
-"""
+﻿"""
 Captum Tabanlı Açıklanabilirlik Modülü
   - LayerGradCam    : Hangi bölge tetikledi?
   - IntegratedGradients : Piksel düzeyinde katkı
@@ -7,7 +7,7 @@ Eski manuel hook yaklaşımı → Captum ile değiştirildi.
 Captum, PyTorch'un resmi XAI kütüphanesidir; daha kararlı ve
 genişletilebilir sonuçlar üretir.
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

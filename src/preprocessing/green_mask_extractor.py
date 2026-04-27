@@ -1,4 +1,4 @@
-"""
+﻿"""
 Green Annotation Mask Extractor
 Tıp Fakültesi'nden gelen yeşil boyalı akciğer grafilerinden:
   1. Binary pnömotoraks maskesi çıkarır
@@ -8,7 +8,7 @@ Yeşil boya sadece G kanalını etkiler; R ve B kanalları
 orijinal grayscale değerlerine yakın kalır. Bu özellik
 hem opak hem yarı saydam overlay durumunda çalışır.
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import cv2

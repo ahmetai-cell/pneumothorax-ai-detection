@@ -1,6 +1,8 @@
 """
 Colab setup: dizinler + .dcm_dir + manifest
 python scripts/colab_setup.py
+
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 import os, glob, shutil, sys
 

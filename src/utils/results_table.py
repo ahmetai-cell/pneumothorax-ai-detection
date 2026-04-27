@@ -1,4 +1,4 @@
-"""
+﻿"""
 Result Table Generator
 K-Fold CV sonuçlarını CSV'ye kaydeder, ortalama ± std hesaplar.
 TÜBİTAK raporuna doğrudan kopyalanabilir tablo üretir.
@@ -7,7 +7,7 @@ Per-site desteği (PTX-498 için):
   append_fold_result(..., per_site={"SiteA": {"dice":…, "iou":…, "hd95":…}, …})
   save_results_table() per-site sütunları otomatik olarak CSV'ye ve konsola ekler.
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

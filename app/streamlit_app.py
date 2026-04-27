@@ -1,4 +1,4 @@
-"""
+﻿"""
 Pnömotoraks AI — Ana Giriş
 ===========================
 Streamlit multi-page app. Sayfalar:
@@ -8,7 +8,7 @@ Streamlit multi-page app. Sayfalar:
 Başlatma:
     streamlit run app/streamlit_app.py
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import streamlit as st

@@ -1,4 +1,4 @@
-"""
+﻿"""
 FastAPI Arayüzü — Pnömotoraks Tespit Sistemi
 Akış: Dosya Yükle → Analiz Et → Sonucu Göster
 
@@ -11,7 +11,7 @@ Endpointler:
     GET  /health        — servis sağlık kontrolü
     GET  /results       — K-fold metrik sonuçları
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import base64
@@ -68,7 +68,7 @@ def get_model() -> PneumothoraxModel:
         if not Path(MODEL_PATH).exists():
             raise RuntimeError(
                 f"Model dosyası bulunamadı: {MODEL_PATH}\n"
-                "Önce modeli eğitin: python src/utils/train.py"
+                "Önce modeli eğitin: python scripts/train_local_png.py --data_root ... --nih_root ..."
             )
         _model = PneumothoraxModel()
         _model.load_state_dict(torch.load(MODEL_PATH, map_location=_device))
@@ -131,7 +131,7 @@ def run_inference(gray: np.ndarray):
     model = get_model()
 
     resized = cv2.resize(gray, (IMG_SIZE, IMG_SIZE))
-    normalized = resized.astype(np.float32) / 255.0
+    normalized = (resized.astype(np.float32) / 255.0 - 0.485) / 0.229
     tensor = torch.tensor(normalized).unsqueeze(0).unsqueeze(0).to(_device)
 
     with torch.no_grad():

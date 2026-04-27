@@ -1,4 +1,4 @@
-"""
+﻿"""
 W&B Yardımcı Fonksiyonlar
 - Fold başına wandb.init (ayrı run)
 - Görsel hata analizi: FP ve FN vakalar wandb.Table olarak
@@ -6,7 +6,7 @@ W&B Yardımcı Fonksiyonlar
   → Hausdorff Distance per case
 - 5-fold özet → wandb.summary
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Global Veri Entegrasyon ve Standardizasyon Yöneticisi
 
 Desteklenen Kaynaklar:
@@ -20,7 +20,7 @@ master_manifest.csv Sütunları:
   source, img_path, mask_path, is_pneumo, split,
   patient_id, view_position, pixel_spacing, img_rows, img_cols
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 Dokuz Eylül Üniversitesi Tıp Fakültesi
 """
 

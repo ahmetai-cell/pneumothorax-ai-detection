@@ -1,4 +1,4 @@
-"""
+﻿"""
 Annotation Birleştirme — Multi-Source Mask Standardization
 
 Tüm kaynaklardaki maskeleri tek formata indirir:
@@ -14,7 +14,7 @@ Kullanım:
   python scripts/unify_annotations.py
   python scripts/unify_annotations.py --verify   # sadece kontrol, yazma
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

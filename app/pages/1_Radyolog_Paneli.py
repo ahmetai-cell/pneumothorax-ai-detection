@@ -1,4 +1,4 @@
-"""
+﻿"""
 Klinik Karar Destek Sistemi v2.0 — Radyolog Paneli
 
 Pnömotoraks Otomatik Tespit ve Analiz Dashboard'u
@@ -13,7 +13,7 @@ Bölümler:
 Başlatma:
     streamlit run app/streamlit_app.py
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 Dokuz Eylül Üniversitesi Tıp Fakültesi
 """
 
@@ -636,7 +636,7 @@ def generate_report_text(
         "  için uzman hekim değerlendirmesi zorunludur.",
         "═" * 60,
         "",
-        "  TÜBİTAK 2209-A | Ahmet Demir",
+        "  TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu",
         "  Dokuz Eylül Üniversitesi Tıp Fakültesi Hastanesi",
     ]
 

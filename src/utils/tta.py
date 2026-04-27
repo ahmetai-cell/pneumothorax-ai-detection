@@ -1,4 +1,4 @@
-"""
+﻿"""
 Test-Time Augmentation (TTA)
 Inference aşamasında aynı görüntüyü N farklı transformasyonla analiz eder,
 tahminlerin ortalamasını alarak daha güvenilir sonuç üretir.
@@ -17,7 +17,7 @@ Augmentation seti (5 varyant):
 
 FastAPI ve Streamlit ile entegre çalışır.
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations
@@ -48,12 +48,15 @@ def _build_tta_variants(gray: np.ndarray, img_size: int = 512) -> list[np.ndarra
     def clip(x: np.ndarray) -> np.ndarray:
         return np.clip(x, 0.0, 1.0)
 
+    def normalize(x: np.ndarray) -> np.ndarray:
+        return (x - 0.485) / 0.229
+
     variants = [
-        resized,                                    # 1. Orijinal
-        np.fliplr(resized).copy(),                  # 2. Yatay flip
-        clip(resized + 0.10),                       # 3. Parlaklık +
-        clip(resized - 0.10),                       # 4. Parlaklık -
-        clip((resized - 0.5) * 1.15 + 0.5),        # 5. Kontrast +
+        normalize(resized),                                    # 1. Orijinal
+        normalize(np.fliplr(resized).copy()),                  # 2. Yatay flip
+        normalize(clip(resized + 0.10)),                       # 3. Parlaklık +
+        normalize(clip(resized - 0.10)),                       # 4. Parlaklık -
+        normalize(clip((resized - 0.5) * 1.15 + 0.5)),        # 5. Kontrast +
     ]
     return variants
 

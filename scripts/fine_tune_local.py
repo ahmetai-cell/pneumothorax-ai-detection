@@ -1,4 +1,4 @@
-"""
+﻿"""
 Fine-tuning Script  —  DEU Local Data (DICOM + NRRD)
 =====================================================
 
@@ -27,7 +27,7 @@ Kullanım:
     # Özel parametreler
     python scripts/fine_tune_local.py --epochs 30 --lr 1e-5 --batch_size 8
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

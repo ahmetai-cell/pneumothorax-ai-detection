@@ -1,4 +1,4 @@
-"""
+﻿"""
 Pre-training Script  —  Global Data (SIIM + NIH)
 ================================================
 
@@ -26,7 +26,7 @@ Kullanım:
     # Özel parametreler
     python scripts/train_global.py --epochs 80 --encoder resnet34 --batch_size 32
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

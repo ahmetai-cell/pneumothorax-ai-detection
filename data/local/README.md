@@ -1,4 +1,4 @@
-# DEU Yerel Veri Dizini
+﻿# DEU Yerel Veri Dizini
 
 Bu dizin, Dokuz Eylül Üniversitesi Hastanesi'nden gelecek
 de-identified DICOM ve NRRD dosyaları için ayrılmıştır.
@@ -34,4 +34,4 @@ python scripts/fine_tune_local.py --freeze_encoder
 python scripts/fine_tune_local.py
 ```
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu

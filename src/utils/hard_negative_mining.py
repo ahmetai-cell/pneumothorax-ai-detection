@@ -1,4 +1,4 @@
-"""
+﻿"""
 Hard Negative Mining (HNM)
 Modelin cilt kıvrımı / skapula kenarı / apikal gölge gibi
 yapıları pnömotoraks sanmasını (False Positive) önler.
@@ -11,7 +11,7 @@ Yaklaşım:
 
 Bu döngü, modelin kolay negatifleri değil zor olanları öğrenmesini sağlar.
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

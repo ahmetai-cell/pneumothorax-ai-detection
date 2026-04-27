@@ -1,4 +1,4 @@
-"""
+﻿"""
 Optimize WeightedRandomSampler
 1500 yerel + 3500 açık kaynak = 5000 görüntü için tasarlandı.
 
@@ -8,7 +8,7 @@ Stratejiler:
   - custom_ratio  : Hedef pos:neg oranını elle ayarla (önerilen: 1:2)
   - source_aware  : Yerel veriyi açık kaynağa göre ağırlıklandır
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

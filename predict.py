@@ -1,10 +1,10 @@
-"""
+﻿"""
 Single Image Prediction — Grad-CAM destekli
 Kullanım:
     python predict.py --image path/to/xray.png
     python predict.py --image path/to/xray.png --model results/checkpoints/best_model.pth
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import argparse
@@ -32,7 +32,7 @@ def predict(image_path: str, model_path: str = "results/checkpoints/best_model.p
 
     # Segmentasyon + sınıflandırma
     resized = cv2.resize(gray, (512, 512))
-    normalized = resized.astype(np.float32) / 255.0
+    normalized = (resized.astype(np.float32) / 255.0 - 0.485) / 0.229
     tensor = torch.tensor(normalized).unsqueeze(0).unsqueeze(0).to(device)
 
     with torch.no_grad():

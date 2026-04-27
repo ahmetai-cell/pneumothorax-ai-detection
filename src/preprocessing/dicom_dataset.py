@@ -1,4 +1,4 @@
-"""
+﻿"""
 DICOM + NRRD Pipeline  —  DEU Hastane Formatı
 ==============================================
 
@@ -21,7 +21,7 @@ Kullanım — CSV modu (unified_manifest.csv):
     df = pd.read_csv("data/processed/unified_manifest.csv")
     ds = DicomSlicerDataset(df, img_size=512, lung_window=True)
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Hastane Verisi Hazırlık Scripti
 
 Tıp Fakültesi'nden gelen yeşil boyalı görüntüleri toplu işler:
@@ -12,7 +12,7 @@ Kullanım:
         --output data/processed/hospital \
         --csv    data/hospital_manifest.csv
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import argparse

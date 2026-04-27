@@ -1,11 +1,11 @@
-"""
+﻿"""
 U-Net++ with Configurable Encoder (EfficientNet-B0 default)
 Hybrid: Segmentation head + Classification head
 
 Değişiklik: smp.Unet → smp.UnetPlusPlus (daha derin skip connections,
 küçük pnömotoraks odaklarında belirgin doğruluk artışı sağlar)
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import torch

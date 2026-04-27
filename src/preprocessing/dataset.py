@@ -1,6 +1,6 @@
-"""
+﻿"""
 PyTorch Dataset — SIIM-ACR Pneumothorax
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import os

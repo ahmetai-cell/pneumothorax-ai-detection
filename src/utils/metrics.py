@@ -1,4 +1,4 @@
-"""
+﻿"""
 Evaluation Metrics — Segmentasyon & Sınıflandırma
 
 Fonksiyonlar:
@@ -7,7 +7,7 @@ Fonksiyonlar:
   compute_auc()        : AUC-ROC (sınıflandırma başlığı)
   hausdorff_distance() : Hausdorff Mesafesi (kontur sapması, piksel)
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

@@ -1,11 +1,11 @@
-"""
+﻿"""
 Eğitim İzleme  —  W&B Canlı Dashboard
 ======================================
 
 W&B API'den fold metriklerini çeker, Plotly ile görselleştirir.
 Eğitim devam ediyorsa 30 sn'de bir otomatik yeniler.
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""
+﻿"""
 W&B Sweep Çalıştırıcı
 Her sweep agent çağrısında bu script çalışır.
 
@@ -6,7 +6,7 @@ Kullanım:
     1. wandb sweep configs/wandb_sweep.yaml   → SWEEP_ID alırsın
     2. wandb agent <SWEEP_ID>                 → sweep başlar
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import os

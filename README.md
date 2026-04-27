@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,35:0a1f3d,65:1a0a2e,100:0d1117&height=200&section=header&text=Pn%C3%B6motoraks%20Tespiti&fontSize=42&fontColor=58a6ff&animation=fadeIn&fontAlignY=38&desc=TÜBİTAK%202209-A%20%7C%20Göğüs%20X-Ray%20%7C%20Deep%20Learning%20%7C%20Görüntü%20İşleme&descAlignY=58&descSize=14&descColor=8b949e"/>
 
@@ -36,7 +36,7 @@ Girdi: Göğüs X-Ray (DICOM/PNG)
 Ön İşleme (CLAHE · Normalizasyon · Augmentasyon)
     │
     ▼
-Model: U-Net + EfficientNet-B4 Encoder
+Model: U-Net + EfficientNet-B0 Encoder
     │
     ▼
 Çıktı: Segmentasyon Maskesi + Sınıflandırma
@@ -66,7 +66,7 @@ Sonuç: Pnömotoraks var / yok + Bölge haritası
 Input (512×512 Grayscale X-Ray)
          │
     ┌────▼─────────────────────────┐
-    │  EfficientNet-B4 Encoder     │  ← Transfer Learning (ImageNet)
+    │  EfficientNet-B0 Encoder     │  ← Transfer Learning (ImageNet)
     │  (Feature Extraction)        │
     └────┬────────────────────────-┘
          │  Skip Connections
@@ -88,24 +88,31 @@ Input (512×512 Grayscale X-Ray)
 pneumothorax-ai-detection/
 │
 ├── 📓 notebooks/
-│   ├── 01_EDA.ipynb              # Keşifsel veri analizi
-│   ├── 02_Preprocessing.ipynb   # Görüntü ön işleme
-│   ├── 03_Training.ipynb        # Model eğitimi
-│   └── 04_Evaluation.ipynb      # Sonuç değerlendirme
+│   └── colab_train.ipynb        # Google Colab eğitim defteri
+│
+├── 🚀 scripts/
+│   ├── train_local_png.py       # Ana eğitim scripti (PTX-498 + NIH)
+│   ├── colab_setup.py           # Colab ortam kurulumu
+│   ├── evaluate_deu.py          # DEÜ hastane verisi değerlendirme
+│   └── fine_tune_local.py       # Fine-tuning scripti
 │
 ├── 🧠 src/
 │   ├── model/
-│   │   ├── unet.py              # U-Net mimarisi
-│   │   ├── encoder.py           # EfficientNet encoder
+│   │   ├── unet.py              # U-Net++ mimarisi
+│   │   ├── encoder.py           # EfficientNet-B0 encoder
 │   │   └── losses.py            # Dice + BCE loss
 │   ├── preprocessing/
-│   │   ├── dicom_reader.py      # DICOM okuma
+│   │   ├── ptx_dataset.py       # PTX-498 + NIH Dataset
 │   │   ├── augmentation.py      # Albumentations pipeline
-│   │   └── dataset.py           # PyTorch Dataset sınıfı
+│   │   └── green_mask_extractor.py  # Maske overlay yardımcısı
 │   └── utils/
-│       ├── metrics.py           # Dice, IoU, AUC hesaplama
-│       ├── visualize.py         # Sonuç görselleştirme
-│       └── train.py             # Eğitim döngüsü
+│       ├── metrics.py           # Dice, IoU, HD95, AUC
+│       ├── tta.py               # Test-Time Augmentation
+│       ├── gradcam.py           # Grad-CAM görselleştirme
+│       └── visualize.py         # Sonuç görselleştirme
+│
+├── 🌐 api/
+│   └── main.py                  # FastAPI REST arayüzü
 │
 ├── 📊 data/                     # Veri seti (gitignore)
 ├── 📈 results/                  # Model ağırlıkları & grafikler
@@ -149,8 +156,11 @@ cd pneumothorax-ai-detection
 # Ortam kur
 pip install -r requirements.txt
 
-# Eğitimi başlat
-python src/utils/train.py --epochs 50 --batch-size 16 --lr 1e-4
+# Eğitimi başlat (lokal)
+python scripts/train_local_png.py \
+    --data_root /path/to/PTX-498-v2-fix \
+    --nih_root  /path/to/nih_data \
+    --epochs 50 --batch_size 16 --no_wandb
 
 # Tek görüntü tahmini
 python predict.py --image path/to/xray.png
@@ -167,7 +177,7 @@ Bu proje, **TÜBİTAK 2209-A Üniversite Öğrencileri Araştırma Projeleri Des
 | Program | TÜBİTAK 2209-A |
 | Alan | Yapay Zeka × Tıbbi Görüntüleme |
 | Yıl | 2024–2025 |
-| Araştırmacı | Ahmet Demir |
+| Araştırmacı | Ahmet Demir, Erkan Koçulu |
 
 ---
 

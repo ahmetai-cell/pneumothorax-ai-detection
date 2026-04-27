@@ -1,4 +1,4 @@
-"""
+﻿"""
 DEU Klinik Veri Değerlendirme Scripti
 ======================================
 
@@ -20,7 +20,7 @@ Kullanım:
   python scripts/evaluate_deu.py --threshold 0.4   # Segmentasyon eşiği
   python scripts/evaluate_deu.py --no_wandb
 
-TÜBİTAK 2209-A | Ahmet Demir | Dokuz Eylül Üniversitesi
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu | Dokuz Eylül Üniversitesi
 """
 
 from __future__ import annotations

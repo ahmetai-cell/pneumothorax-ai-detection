@@ -1,4 +1,4 @@
-"""
+﻿"""
 Training Script — PTX-498 (pozitif) + NIH Negatif
 ===================================================
 
@@ -17,7 +17,7 @@ Kullanım:
     python scripts/train_local_png.py ... --resume
     python scripts/train_local_png.py ... --quick_test
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ class TrainConfig:
     no_wandb:       bool       = False
     quick_test:     bool       = False
     wandb_project:  str        = "Pneumothorax-Detection"
-    wandb_entity:   str        = "ahmet-ai-t-bi-tak"
+    wandb_entity:   str        = ""
     wandb_group:    str        = ""
 
     def as_wandb_dict(self) -> dict:

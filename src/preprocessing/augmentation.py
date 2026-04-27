@@ -1,4 +1,4 @@
-"""
+﻿"""
 Gelişmiş Tıbbi Augmentation Pipeline
 Yerel veri (1500) için agresif, açık kaynak veri (3500) için standart pipeline.
 
@@ -7,7 +7,7 @@ Yeni eklenenler:
   - OpticalDistortion: Portatif grafi lens bozulmalarını simüle eder
   - RandomShadow    : Göğüs kafesi gölgelerini simüle eder
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import albumentations as A

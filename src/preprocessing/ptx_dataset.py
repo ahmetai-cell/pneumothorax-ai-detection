@@ -1,4 +1,4 @@
-"""
+﻿"""
 PTXDataset — Çoklu Format Segmentasyon Dataset
 ===============================================
 
@@ -32,7 +32,7 @@ Tasarım kararları:
   - NRRD: pynrrd ile okunur, ilk kanal/dilim alınır.
   - Maskeler her formattan float32 0/1'e dönüştürülür.
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Veri Bölme Scripti — DEU Test, SIIM/NIH Train/Val
 
 Strateji:
@@ -19,7 +19,7 @@ Kullanım:
     data/splits/test.csv
     data/splits/split_report.txt
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import argparse

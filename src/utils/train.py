@@ -1,9 +1,9 @@
-"""
+﻿"""
 Eğitim Döngüsü — Tam W&B Entegrasyonlu
 Stratified K-Fold + WeightedRandomSampler + ReduceLROnPlateau
 + Hard Negative Mining + Görsel Hata Analizi + Özet Tablo
 
-TÜBİTAK 2209-A | Ahmet Demir
+TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
 import json
