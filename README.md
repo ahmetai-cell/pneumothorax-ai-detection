@@ -177,7 +177,7 @@ Bu proje, **TÜBİTAK 2209-A Üniversite Öğrencileri Araştırma Projeleri Des
 | Program | TÜBİTAK 2209-A |
 | Alan | Yapay Zeka × Tıbbi Görüntüleme |
 | Yıl | 2024–2025 |
-| Araştırmacı | Ahmet Demir, Erkan Koçulu |
+| Araştırmacılar | Ahmet Demir, Erkan Koçulu |
 
 ---
 
