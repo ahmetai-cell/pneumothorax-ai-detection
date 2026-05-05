@@ -222,6 +222,14 @@ def _check_alignment(
     dh = abs(ih - mh)
     dw = abs(iw - mw)
 
+    # 3D Slicer bazen NRRD'yi transposed (W×H) kaydeder — otomatik düzelt
+    if ih == mw and iw == mh:
+        log.warning(
+            "NRRD transposed kaydedilmiş (%dx%d vs DICOM %dx%d) — otomatik düzeltiliyor: %s",
+            mh, mw, ih, iw, Path(mask_path).name,
+        )
+        return  # __getitem__ içinde mask.T uygulanacak
+
     if dh > tolerance or dw > tolerance:
         raise AlignmentError(
             f"Boyut uyumsuzluğu!\n"
@@ -487,6 +495,9 @@ class DicomSlicerDataset(Dataset):
         has_mask = mask_path not in ("N/A", "", "nan") and Path(mask_path).exists()
         if has_mask:
             mask_arr = _read_mask(mask_path)
+            # 3D Slicer transposition düzeltmesi: NRRD (W×H) → (H×W)
+            if mask_arr.shape == (img_arr.shape[1], img_arr.shape[0]):
+                mask_arr = mask_arr.T
             # Yeniden hizalama kontrolü (prevalidate bypass edilmişse)
             if suffix in (".dcm", ".dicom") and self.align_tolerance >= 0:
                 try:

@@ -345,7 +345,7 @@ def main() -> None:
         "lr": args.lr, "batch_size": args.batch_size, "epochs": args.epochs,
         "encoder_name": encoder, "img_size": img_size,
         "wandb_project": "Pneumothorax-Detection",
-        "wandb_entity": "ahmet-ai-t-bi-tak",
+        "wandb_entity": "",
         "wandb_group": "deu-fine-tune",
         "fine_tuning": True,
         "freeze_encoder": args.freeze_encoder,
