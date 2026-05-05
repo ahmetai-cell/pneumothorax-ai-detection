@@ -43,7 +43,7 @@ class CombinedLoss(nn.Module):
         else:
             seg_loss = seg_pred.sum() * 0.0
 
-        cls_loss = self.bce(cls_pred.squeeze(), cls_target.float())
+        cls_loss = self.bce(cls_pred.view(-1), cls_target.float())
 
         # Deep Supervision: her auxiliary çıktıya 0.3 ağırlıkla ek loss
         # (sadece pozitif örnekler, ana loss'la aynı mantık)
