@@ -119,8 +119,10 @@ def train_epoch(model, loader, optimizer, criterion, device) -> tuple[float, flo
         masks  = masks.to(device)
         labels = labels.to(device)
         optimizer.zero_grad()
-        seg_pred, cls_pred = model(images)
-        loss = criterion(seg_pred, masks, cls_pred, labels)
+        outputs = model(images)
+        seg_pred, cls_pred = outputs[0], outputs[1]
+        aux_preds = outputs[2] if len(outputs) > 2 else None
+        loss = criterion(seg_pred, masks, cls_pred, labels, aux_preds)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
