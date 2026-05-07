@@ -495,7 +495,7 @@ def train_kfold_local(cfg: TrainConfig) -> list[dict]:
 
         if resume_ckpt.exists():
             try:
-                state = torch.load(resume_ckpt, map_location=device)
+                state = torch.load(resume_ckpt, map_location=device, weights_only=False)
                 model.load_state_dict(state["model"])
                 optimizer.load_state_dict(state["optimizer"])
                 scheduler.load_state_dict(state["scheduler"])
