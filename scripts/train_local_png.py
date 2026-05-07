@@ -47,6 +47,7 @@ from src.preprocessing.ptx_dataset import (
     SITE_NAMES,
     PTXDataset,
     build_combined_folds,
+    build_dicom_nrrd_manifest,
     build_nih_negatives,
     build_ptx_manifest,
 )
@@ -75,6 +76,7 @@ N_NEGATIVES     : int   = 550   # NIH negatif vaka sayısı
 class TrainConfig:
     data_root:      Path       = field(default_factory=lambda: ROOT / "data" / "local" / "ptx498")
     nih_root:       Path | None = None
+    deu_root:       Path | None = None
     checkpoint_dir: Path       = field(default_factory=lambda: ROOT / "results" / "checkpoints")
     results_csv:    Path       = field(default_factory=lambda: ROOT / "results" / "ptx_local_kfold.csv")
     encoder_name:   str        = "efficientnet-b0"
@@ -109,7 +111,7 @@ class TrainConfig:
             "wandb_entity":         self.wandb_entity,
             "wandb_group":          self.wandb_group,
             "cv_strategy":          "Site-Stratified K-Fold + NIH Negatives",
-            "dataset":              "PTX-498 + NIH No-Finding",
+            "dataset":              "PTX-498 + DEU + NIH No-Finding",
         }
 
 
@@ -296,7 +298,8 @@ def _val_epoch(
     lbl_list  = val_df_r["label"].tolist()
     per_site: dict[str, dict] = {}
 
-    for site in SITE_NAMES:
+    all_sites = list(SITE_NAMES) + ["DEU"]
+    for site in all_sites:
         idx = [
             i for i, (s, l) in enumerate(zip(sites, lbl_list))
             if s == site and l == 1
@@ -366,6 +369,19 @@ def train_kfold_local(cfg: TrainConfig) -> list[dict]:
     # ── Veri ─────────────────────────────────────────────────────────────────
     print(f"\n  Veri kökü: {cfg.data_root}")
     pos_df = build_ptx_manifest(cfg.data_root)
+
+    if cfg.deu_root is not None:
+        import pandas as pd
+        print(f"  DEÜ kökü:  {cfg.deu_root}")
+        deu_df = build_dicom_nrrd_manifest(
+            cfg.deu_root,
+            img_glob="dicom/*.dcm",
+            mask_glob="nrrd/*.nrrd",
+            label=1,
+            site_name="DEU",
+        )
+        pos_df = pd.concat([pos_df, deu_df], ignore_index=True)
+        print(f"  Toplam pozitif: {len(pos_df)} (PTX-498 + DEÜ)")
 
     if cfg.nih_root is not None:
         print(f"  NIH kökü:  {cfg.nih_root}")
@@ -599,6 +615,8 @@ def _parse_args() -> TrainConfig:
                    help="PTX-498-v2-fix kök dizini (SiteA/, SiteB/, SiteC/)")
     p.add_argument("--nih_root", default=None,
                    help="NIH ChestX-ray14 kök dizini (Data_Entry_2017.csv + images_*/images/)")
+    p.add_argument("--deu_root", default=None,
+                   help="DEÜ DICOM+NRRD kök dizini (dicom/*.dcm + nrrd/*.nrrd)")
     p.add_argument("--checkpoint_dir", default=str(ROOT / "results" / "checkpoints"))
     p.add_argument("--results_csv",    default=str(ROOT / "results" / "ptx_local_kfold.csv"))
     p.add_argument("--encoder",        default="efficientnet-b0")
@@ -622,6 +640,7 @@ def _parse_args() -> TrainConfig:
     return TrainConfig(
         data_root      = Path(args.data_root),
         nih_root       = Path(args.nih_root) if args.nih_root else None,
+        deu_root       = Path(args.deu_root) if args.deu_root else None,
         checkpoint_dir = Path(args.checkpoint_dir),
         results_csv    = Path(args.results_csv),
         encoder_name   = args.encoder,
