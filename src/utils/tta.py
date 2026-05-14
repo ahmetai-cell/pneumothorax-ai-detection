@@ -49,7 +49,9 @@ def _build_tta_variants(gray: np.ndarray, img_size: int = 512) -> list[np.ndarra
         return np.clip(x, 0.0, 1.0)
 
     def normalize(x: np.ndarray) -> np.ndarray:
-        return (x - 0.485) / 0.229
+        # Dataset: img/255 → A.Normalize(mean=0.485, std=0.229, max_pixel_value=255)
+        # Etkili formül: (img_01 - 0.485*255) / (0.229*255)
+        return (x - 0.485 * 255.0) / (0.229 * 255.0)
 
     variants = [
         normalize(resized),                                    # 1. Orijinal

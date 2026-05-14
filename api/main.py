@@ -54,26 +54,66 @@ app.add_middleware(
 
 # ── Model yükleme ──────────────────────────────────────────────────────────────
 
-MODEL_PATH = os.getenv("MODEL_PATH", "results/checkpoints/best_model.pth")
+CHECKPOINT_DIR = Path(os.getenv("CHECKPOINT_DIR", "results/checkpoints"))
+N_FOLDS = 5
 IMG_SIZE = 512
 
-_model: PneumothoraxModel | None = None
 _device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+_ensemble: torch.nn.Module | None = None
+_gradcam_model: PneumothoraxModel | None = None  # Fold 5 (en iyi) — sadece Grad-CAM için
 
 
-def get_model() -> PneumothoraxModel:
-    """Model singleton — ilk çağrıda diskten yükler."""
-    global _model
-    if _model is None:
-        if not Path(MODEL_PATH).exists():
-            raise RuntimeError(
-                f"Model dosyası bulunamadı: {MODEL_PATH}\n"
-                "Önce modeli eğitin: python scripts/train_local_png.py --data_root ... --nih_root ..."
-            )
-        _model = PneumothoraxModel()
-        _model.load_state_dict(torch.load(MODEL_PATH, map_location=_device))
-        _model.eval().to(_device)
-    return _model
+class _EnsembleModel(torch.nn.Module):
+    """5 fold modelinin çıktılarını ortalar. predict_tta ile uyumlu."""
+
+    def __init__(self, models: list[PneumothoraxModel]):
+        super().__init__()
+        self.models = torch.nn.ModuleList(models)
+
+    def forward(self, x: torch.Tensor):
+        seg_acc = cls_acc = None
+        for m in self.models:
+            out = m(x)
+            seg, cls = out[0], out[1]
+            seg_acc = seg if seg_acc is None else seg_acc + seg
+            cls_acc = cls if cls_acc is None else cls_acc + cls
+        n = len(self.models)
+        return seg_acc / n, cls_acc / n
+
+
+def _load_fold(fold_i: int) -> PneumothoraxModel:
+    path = CHECKPOINT_DIR / f"fold_{fold_i}_best.pth"
+    if not path.exists():
+        raise RuntimeError(
+            f"Checkpoint bulunamadı: {path}\n"
+            f"CHECKPOINT_DIR={CHECKPOINT_DIR} — env var veya path'i kontrol edin."
+        )
+    m = PneumothoraxModel()
+    m.load_state_dict(torch.load(path, map_location=_device, weights_only=False))
+    return m.eval().to(_device)
+
+
+def get_ensemble() -> torch.nn.Module:
+    """5 fold ensemble singleton."""
+    global _ensemble
+    if _ensemble is None:
+        models = [_load_fold(i) for i in range(1, N_FOLDS + 1)]
+        _ensemble = _EnsembleModel(models).to(_device)
+        _ensemble.eval()
+    return _ensemble
+
+
+def get_gradcam_model() -> PneumothoraxModel:
+    """Grad-CAM için en iyi fold (fold_5) singleton."""
+    global _gradcam_model
+    if _gradcam_model is None:
+        _gradcam_model = _load_fold(N_FOLDS)
+    return _gradcam_model
+
+
+# Geriye dönük uyumluluk — eski kod get_model() çağırıyorsa ensemble döner
+def get_model() -> torch.nn.Module:
+    return get_ensemble()
 
 
 # ── Yardımcı fonksiyonlar ──────────────────────────────────────────────────────
@@ -122,20 +162,23 @@ def ndarray_to_base64(img_bgr: np.ndarray) -> str:
 
 def run_inference(gray: np.ndarray):
     """
-    Modeli çalıştırır, segmentasyon maskesi ve sınıflandırma skoru döndürür.
+    Ensemble (5 fold) ile inference yapar.
 
     Returns:
-        seg_mask  : float32 ndarray (IMG_SIZE x IMG_SIZE), sigmoid çıktısı
-        cls_prob  : float, pnömotoraks olasılığı
+        seg_mask : float32 ndarray (IMG_SIZE x IMG_SIZE), ortalama sigmoid çıktısı
+        cls_prob : float, 5 fold ortalaması pnömotoraks olasılığı
     """
-    model = get_model()
+    ensemble = get_ensemble()
 
     resized = cv2.resize(gray, (IMG_SIZE, IMG_SIZE))
-    normalized = (resized.astype(np.float32) / 255.0 - 0.485) / 0.229
+    img_01 = resized.astype(np.float32) / 255.0
+    # Dataset: img/255 → A.Normalize(mean=0.485, std=0.229, max_pixel_value=255)
+    # Etkili formül: (img_01 - 0.485*255) / (0.229*255) ≈ -2.1 sabit
+    normalized = (img_01 - 0.485 * 255.0) / (0.229 * 255.0)
     tensor = torch.tensor(normalized).unsqueeze(0).unsqueeze(0).to(_device)
 
     with torch.no_grad():
-        seg_pred, cls_pred = model(tensor)
+        seg_pred, cls_pred = ensemble(tensor)
 
     cls_prob = torch.sigmoid(cls_pred).item()
     seg_mask = torch.sigmoid(seg_pred).squeeze().cpu().numpy()
@@ -146,13 +189,18 @@ def run_inference(gray: np.ndarray):
 
 @app.get("/health", summary="Servis sağlık kontrolü")
 async def health():
-    """API ve model durumunu döndürür."""
-    model_ready = Path(MODEL_PATH).exists()
+    """API ve ensemble model durumunu döndürür."""
+    fold_status = {
+        f"fold_{i}": (CHECKPOINT_DIR / f"fold_{i}_best.pth").exists()
+        for i in range(1, N_FOLDS + 1)
+    }
+    all_ready = all(fold_status.values())
     return {
         "status": "ok",
-        "model_ready": model_ready,
+        "ensemble_ready": all_ready,
+        "folds": fold_status,
         "device": str(_device),
-        "model_path": MODEL_PATH,
+        "checkpoint_dir": str(CHECKPOINT_DIR),
     }
 
 
@@ -183,7 +231,7 @@ async def predict(file: UploadFile = File(...)):
 
     # Model hazır mı?
     try:
-        model = get_model()
+        get_ensemble()
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -195,17 +243,16 @@ async def predict(file: UploadFile = File(...)):
 
     orig_h, orig_w = gray.shape[:2]
 
-    # Segmentasyon + sınıflandırma
+    # Segmentasyon + sınıflandırma (ensemble)
     try:
         seg_mask, cls_prob = run_inference(gray)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model hatası: {e}")
 
-    # Grad-CAM
+    # Grad-CAM — fold_5 (en iyi tek model) üzerinden
     try:
-        gradcam_bgr, _ = generate_gradcam_captum(model, gray, img_size=IMG_SIZE)
+        gradcam_bgr, _ = generate_gradcam_captum(get_gradcam_model(), gray, img_size=IMG_SIZE)
     except Exception as e:
-        # Grad-CAM opsiyonel — hata olursa düz görüntü döndür
         gradcam_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     # Segmentasyon maskesini orijinal boyuta getir
@@ -255,7 +302,7 @@ async def predict_with_tta(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Desteklenmeyen dosya türü.")
 
     try:
-        model = get_model()
+        ensemble = get_ensemble()
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -265,7 +312,7 @@ async def predict_with_tta(file: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail=f"Görüntü okunamadı: {e}")
 
     try:
-        tta_result = predict_tta(model, gray, img_size=IMG_SIZE, seg_threshold=SEG_THRESHOLD)
+        tta_result = predict_tta(ensemble, gray, img_size=IMG_SIZE, seg_threshold=SEG_THRESHOLD)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTA hatası: {e}")
 
@@ -280,7 +327,7 @@ async def predict_with_tta(file: UploadFile = File(...)):
     original_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     try:
-        gradcam_bgr, _ = generate_gradcam_captum(model, gray, img_size=IMG_SIZE)
+        gradcam_bgr, _ = generate_gradcam_captum(get_gradcam_model(), gray, img_size=IMG_SIZE)
     except Exception:
         gradcam_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
