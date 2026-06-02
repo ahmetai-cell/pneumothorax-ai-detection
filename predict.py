@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
-from src.model.unet import PneumothoraxModel
+from src.models.unet import PneumothoraxModel
 from src.utils.gradcam import generate_gradcam_result
 from src.utils.normalize import normalize_to_tensor
 

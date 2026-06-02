@@ -37,7 +37,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
 
-from src.model.unet import PneumothoraxModel
+from src.models.unet import PneumothoraxModel
 from src.preprocessing.green_mask_extractor import overlay_mask_on_image
 from src.utils.gradcam import generate_gradcam_result
 from src.utils.normalize import normalize_to_tensor

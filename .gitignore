@@ -43,3 +43,4 @@ docker/ssl/*.key
 
 # Version metadata (push sonrası oluşur)
 results/checkpoints/version_meta.json
+results/ptx_local_kfold.csv
