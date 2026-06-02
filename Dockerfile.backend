@@ -1,0 +1,99 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Backend — Pnömotoraks Tespit API
+# Multi-stage: Builder → CPU-runtime veya CUDA-runtime
+#
+# CPU build (varsayılan):
+#   docker build -f Dockerfile.backend -t ptx-backend .
+#
+# CUDA build:
+#   docker build -f Dockerfile.backend --build-arg BASE=cuda -t ptx-backend:cuda .
+#
+# Apple Silicon (MPS): Docker'da MPS passthrough desteklenmez.
+#   Mac'te native çalıştırın: uvicorn api.main:app --port 8000
+# ─────────────────────────────────────────────────────────────────────────────
+
+ARG BASE=cpu
+
+# ── Stage 1: CPU base ─────────────────────────────────────────────────────────
+FROM python:3.11-slim AS base-cpu
+ENV TORCH_INDEX=https://download.pytorch.org/whl/cpu
+ENV TORCH_PACKAGES="torch==2.3.1+cpu torchvision==0.18.1+cpu --index-url https://download.pytorch.org/whl/cpu"
+
+# ── Stage 1: CUDA base ────────────────────────────────────────────────────────
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS base-cuda
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-dev python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip
+ENV TORCH_PACKAGES="torch==2.3.1 torchvision==0.18.1"
+
+# ── Stage 2: builder (ortak) ─────────────────────────────────────────────────
+FROM base-${BASE} AS builder
+
+WORKDIR /build
+
+# Sistem bağımlılıkları
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ libgl1 libglib2.0-0 libsm6 libxrender1 libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Wheel cache için önce requirements kopyala
+COPY requirements.txt .
+
+# PyTorch önce kur (büyük, cache için ayrı layer)
+RUN pip install --no-cache-dir --upgrade pip wheel && \
+    if [ -n "${TORCH_PACKAGES}" ]; then \
+        pip install --no-cache-dir ${TORCH_PACKAGES}; \
+    else \
+        pip install --no-cache-dir torch==2.3.1 torchvision==0.18.1; \
+    fi
+
+# Kalan bağımlılıklar (torch hariç)
+RUN grep -v "^torch" requirements.txt | grep -v "^torchvision" > /tmp/req_notorch.txt && \
+    pip install --no-cache-dir -r /tmp/req_notorch.txt
+
+# ── Stage 3: production runtime ───────────────────────────────────────────────
+FROM base-${BASE} AS production
+
+# Güvenlik: root olmayan kullanıcı
+RUN groupadd -r ptxapp && useradd -r -g ptxapp -m -d /home/ptxapp ptxapp
+
+WORKDIR /app
+
+# Sistem kütüphaneleri (sadece runtime, geliştirme araçları değil)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libsm6 libxrender1 libxext6 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python paketlerini builder'dan kopyala
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Uygulama kaynak kodu
+COPY src/        ./src/
+COPY api/        ./api/
+COPY predict.py  .
+
+# Checkpoint volume mount noktası
+RUN mkdir -p /checkpoints /app/results/checkpoints && \
+    chown -R ptxapp:ptxapp /app /checkpoints
+
+# Ortam değişkenleri (runtime override edilebilir)
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CHECKPOINT_DIR=/checkpoints \
+    CLS_THRESHOLD=0.5 \
+    SEG_THRESHOLD=0.90 \
+    WORKERS=1 \
+    PORT=8000
+
+USER ptxapp
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Uvicorn: production'da tek worker (GPU stateful), gerekirse gunicorn ile scale et
+CMD ["sh", "-c", \
+     "uvicorn api.main:app --host 0.0.0.0 --port ${PORT} --workers ${WORKERS} --no-access-log"]

@@ -29,7 +29,17 @@ dist/
 
 # Test cache
 .pytest_cache/
+.coverage
+htmlcov/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Docker secrets
+docker/ssl/*.pem
+docker/ssl/*.crt
+docker/ssl/*.key
+
+# Version metadata (push sonrası oluşur)
+results/checkpoints/version_meta.json

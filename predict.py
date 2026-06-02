@@ -15,6 +15,7 @@ import torch
 
 from src.model.unet import PneumothoraxModel
 from src.utils.gradcam import generate_gradcam_result
+from src.utils.normalize import normalize_to_tensor
 
 
 def predict(image_path: str, model_path: str = "results/checkpoints/best_model.pth", threshold: float = 0.5):
@@ -22,7 +23,7 @@ def predict(image_path: str, model_path: str = "results/checkpoints/best_model.p
 
     # Model yükle
     model = PneumothoraxModel()
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval().to(device)
 
     # Görüntüyü yükle
@@ -32,8 +33,7 @@ def predict(image_path: str, model_path: str = "results/checkpoints/best_model.p
 
     # Segmentasyon + sınıflandırma
     resized = cv2.resize(gray, (512, 512))
-    normalized = (resized.astype(np.float32) / 255.0 - 0.485) / 0.229
-    tensor = torch.tensor(normalized).unsqueeze(0).unsqueeze(0).to(device)
+    tensor = normalize_to_tensor(resized, device=device)
 
     with torch.no_grad():
         seg_pred, cls_pred = model(tensor)

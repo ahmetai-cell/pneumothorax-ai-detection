@@ -1,42 +1,48 @@
 # ── Deep Learning ─────────────────────────────────────────────────────────────
-torch>=2.0.0
-torchvision>=0.15.0
+torch>=2.1.0
+torchvision>=0.16.0
 segmentation-models-pytorch>=0.3.3
 
 # ── Görüntü İşleme ────────────────────────────────────────────────────────────
 opencv-python>=4.8.0
-albumentations>=1.3.0
+albumentations>=2.0.0,<3.0.0
 Pillow>=10.0.0
 
-# ── Tıbbi Görüntü Okuma ───────────────────────────────────────────────────────
-pydicom>=2.4.0          # DICOM
-nibabel>=5.1.0          # NIfTI (.nii, .nii.gz) — 3D Slicer export
-pynrrd>=1.0.0           # NRRD (.nrrd)          — 3D Slicer yerli format
-SimpleITK>=2.3.0        # DICOM seri okuma (opsiyonel, gelişmiş kullanım için)
+# ── Tıbbi Görüntü ─────────────────────────────────────────────────────────────
+pydicom>=2.4.0
+nibabel>=5.1.0
+pynrrd>=1.0.0
+SimpleITK>=2.3.0
 
 # ── Veri & ML ─────────────────────────────────────────────────────────────────
 pandas>=2.0.0
 numpy>=1.24.0
-scikit-learn>=1.3.0     # StratifiedKFold, roc_auc_score
+scikit-learn>=1.3.0
 
-# ── Açıklanabilirlik (XAI) ────────────────────────────────────────────────────
-captum>=0.7.0           # LayerGradCam + IntegratedGradients
+# ── XAI ───────────────────────────────────────────────────────────────────────
+captum>=0.7.0
 
 # ── Deney Takibi ──────────────────────────────────────────────────────────────
-wandb>=0.17.0           # W&B: metrik loglama, görsel tahminler, sweep
+wandb>=0.17.0
+tensorboard>=2.13.0
 
-# ── Backend & Demo ────────────────────────────────────────────────────────────
+# ── Backend ───────────────────────────────────────────────────────────────────
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 streamlit>=1.35.0
 
-# ── Görselleştirme & İzleme ───────────────────────────────────────────────────
-matplotlib>=3.7.0
-plotly>=5.17.0          # Gauge, dağılım, histogram, alan karşılaştırma grafikleri
-tqdm>=4.65.0
-tensorboard>=2.13.0
-jupyter>=1.0.0
+# ── Config ────────────────────────────────────────────────────────────────────
+pyyaml>=6.0.0
+python-dotenv>=1.0.0
 
-# ── Rapor üretimi ─────────────────────────────────────────────────────────────
-fpdf2>=2.7.0            # Klinik rapor → PDF indirme (opsiyonel)
+# ── Export ────────────────────────────────────────────────────────────────────
+onnx>=1.15.0
+onnxruntime>=1.16.0
+
+# ── Görselleştirme ────────────────────────────────────────────────────────────
+matplotlib>=3.7.0
+tqdm>=4.65.0
+
+# ── Rapor ─────────────────────────────────────────────────────────────────────
+fpdf2>=2.7.0

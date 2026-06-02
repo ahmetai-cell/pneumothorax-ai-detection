@@ -27,6 +27,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from src.utils.normalize import normalize_image
+
 
 # ── Eşik değerleri — tek kaynak (api/main.py buradan import eder) ─────────────
 
@@ -48,17 +50,12 @@ def _build_tta_variants(gray: np.ndarray, img_size: int = 512) -> list[np.ndarra
     def clip(x: np.ndarray) -> np.ndarray:
         return np.clip(x, 0.0, 1.0)
 
-    def normalize(x: np.ndarray) -> np.ndarray:
-        # Dataset: img/255 → A.Normalize(mean=0.485, std=0.229, max_pixel_value=255)
-        # Etkili formül: (img_01 - 0.485*255) / (0.229*255)
-        return (x - 0.485 * 255.0) / (0.229 * 255.0)
-
     variants = [
-        normalize(resized),                                    # 1. Orijinal
-        normalize(np.fliplr(resized).copy()),                  # 2. Yatay flip
-        normalize(clip(resized + 0.10)),                       # 3. Parlaklık +
-        normalize(clip(resized - 0.10)),                       # 4. Parlaklık -
-        normalize(clip((resized - 0.5) * 1.15 + 0.5)),        # 5. Kontrast +
+        normalize_image(resized),                                    # 1. Orijinal
+        normalize_image(np.fliplr(resized).copy()),                  # 2. Yatay flip
+        normalize_image(clip(resized + 0.10)),                       # 3. Parlaklık +
+        normalize_image(clip(resized - 0.10)),                       # 4. Parlaklık -
+        normalize_image(clip((resized - 0.5) * 1.15 + 0.5)),        # 5. Kontrast +
     ]
     return variants
 

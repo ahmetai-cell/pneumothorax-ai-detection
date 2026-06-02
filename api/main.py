@@ -17,6 +17,7 @@ TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 import base64
 import csv
 import io
+import logging
 import os
 from pathlib import Path
 
@@ -26,12 +27,16 @@ import torch
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from src.model.unet import PneumothoraxModel
 from src.preprocessing.green_mask_extractor import load_image, overlay_mask_on_image
-from src.utils.gradcam import generate_gradcam_captum
+from src.utils.gradcam import generate_gradcam_result
+from src.utils.normalize import normalize_to_tensor
 from src.utils.tta import predict_tta, uncertainty_label, CLS_THRESHOLD, SEG_THRESHOLD
+
+logger = logging.getLogger("ptx-api")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ── Uygulama ──────────────────────────────────────────────────────────────────
 
@@ -58,7 +63,12 @@ CHECKPOINT_DIR = Path(os.getenv("CHECKPOINT_DIR", "results/checkpoints"))
 N_FOLDS = 5
 IMG_SIZE = 512
 
-_device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    _device = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    _device = torch.device("mps")
+else:
+    _device = torch.device("cpu")
 _ensemble: torch.nn.Module | None = None
 _gradcam_model: PneumothoraxModel | None = None  # Fold 5 (en iyi) — sadece Grad-CAM için
 
@@ -118,40 +128,79 @@ def get_model() -> torch.nn.Module:
 
 # ── Yardımcı fonksiyonlar ──────────────────────────────────────────────────────
 
-ACCEPTED_TYPES = {"image/png", "image/jpeg", "image/jpg", "application/dicom"}
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+_ALLOWED_EXT      = {".png", ".jpg", ".jpeg", ".dcm", ".dicom"}
+_DICOM_EXT        = {".dcm", ".dicom"}
+
+
+def _validate_upload(upload: UploadFile) -> str:
+    """
+    Dosya uzantısını doğrular; DICOM veya raster olduğunu belirler.
+    Geçersizse HTTPException(400) fırlatır.
+    Döner: 'dicom' veya 'raster'
+    """
+    filename = upload.filename or ""
+    ext = Path(filename).suffix.lower()
+    if ext not in _ALLOWED_EXT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Desteklenmeyen uzantı '{ext}'. İzin verilenler: {sorted(_ALLOWED_EXT)}",
+        )
+    return "dicom" if ext in _DICOM_EXT else "raster"
 
 
 def read_upload_as_gray(upload: UploadFile) -> np.ndarray:
     """
     UploadFile'ı uint8 grayscale numpy dizisine dönüştürür.
     PNG, JPEG ve DICOM formatlarını destekler.
+    50 MB boyut limiti uygulanır.
     """
-    content = upload.file.read()
+    file_type = _validate_upload(upload)
 
-    # DICOM: pydicom ile oku
-    if upload.filename and upload.filename.lower().endswith((".dcm", ".dicom")):
-        import pydicom, tempfile
+    content = upload.file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dosya çok büyük. Maksimum: {_MAX_UPLOAD_BYTES // (1024*1024)} MB",
+        )
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Boş dosya yüklendi.")
+
+    if file_type == "dicom":
+        import pydicom
+        import tempfile
         with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
         try:
-            import pydicom as pd_
-            ds = pd_.dcmread(tmp_path)
+            try:
+                ds = pydicom.dcmread(tmp_path)
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail=f"Geçersiz DICOM dosyası: {exc}")
+            if not hasattr(ds, "pixel_array"):
+                raise HTTPException(status_code=422, detail="DICOM piksel verisi bulunamadı.")
             arr = ds.pixel_array.astype(np.float32)
-            # Lung window normalization: clamp to [-1500, 500] HU range
             if hasattr(ds, "RescaleSlope") and hasattr(ds, "RescaleIntercept"):
                 arr = arr * float(ds.RescaleSlope) + float(ds.RescaleIntercept)
                 arr = np.clip(arr, -1500, 500)
             arr = ((arr - arr.min()) / (arr.max() - arr.min() + 1e-8) * 255).astype(np.uint8)
             if arr.ndim == 3:
                 arr = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+            logger.info(f"DICOM okundu: shape={arr.shape} file={upload.filename}")
             return arr
         finally:
             os.unlink(tmp_path)
 
-    # PNG / JPEG: Pillow ile oku
-    pil_img = Image.open(io.BytesIO(content)).convert("L")  # grayscale
-    return np.array(pil_img, dtype=np.uint8)
+    # PNG / JPEG
+    try:
+        pil_img = Image.open(io.BytesIO(content)).convert("L")
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=422, detail="Geçersiz veya bozuk görüntü dosyası.")
+    arr = np.array(pil_img, dtype=np.uint8)
+    if arr.size == 0:
+        raise HTTPException(status_code=422, detail="Boş görüntü içeriği.")
+    logger.info(f"Görüntü okundu: shape={arr.shape} file={upload.filename}")
+    return arr
 
 
 def ndarray_to_base64(img_bgr: np.ndarray) -> str:
@@ -171,11 +220,7 @@ def run_inference(gray: np.ndarray):
     ensemble = get_ensemble()
 
     resized = cv2.resize(gray, (IMG_SIZE, IMG_SIZE))
-    img_01 = resized.astype(np.float32) / 255.0
-    # Dataset: img/255 → A.Normalize(mean=0.485, std=0.229, max_pixel_value=255)
-    # Etkili formül: (img_01 - 0.485*255) / (0.229*255) ≈ -2.1 sabit
-    normalized = (img_01 - 0.485 * 255.0) / (0.229 * 255.0)
-    tensor = torch.tensor(normalized).unsqueeze(0).unsqueeze(0).to(_device)
+    tensor  = normalize_to_tensor(resized, device=_device)
 
     with torch.no_grad():
         seg_pred, cls_pred = ensemble(tensor)
@@ -220,15 +265,6 @@ async def predict(file: UploadFile = File(...)):
     - `gradcam_image`    : Base64 PNG (Grad-CAM overlay)
     - `segmentation_image` : Base64 PNG (segmentasyon maskesi overlay)
     """
-    # Dosya uzantı kontrolü
-    filename = file.filename or ""
-    allowed_ext = {".png", ".jpg", ".jpeg", ".dcm", ".dicom"}
-    if Path(filename).suffix.lower() not in allowed_ext:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Desteklenmeyen dosya türü. İzin verilenler: {allowed_ext}",
-        )
-
     # Model hazır mı?
     try:
         get_ensemble()
@@ -251,8 +287,9 @@ async def predict(file: UploadFile = File(...)):
 
     # Grad-CAM — fold_5 (en iyi tek model) üzerinden
     try:
-        gradcam_bgr, _ = generate_gradcam_captum(get_gradcam_model(), gray, img_size=IMG_SIZE)
+        gradcam_bgr, _ = generate_gradcam_result(get_gradcam_model(), gray, img_size=IMG_SIZE)
     except Exception as e:
+        logger.warning(f"GradCAM başarısız, orijinal görüntü kullanılıyor: {e}")
         gradcam_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     # Segmentasyon maskesini orijinal boyuta getir
@@ -266,6 +303,10 @@ async def predict(file: UploadFile = File(...)):
     # Karar — hem cls_prob hem maske alanı kontrol edilir
     mask_ratio = float(binary_mask.sum()) / (255 * orig_h * orig_w)
     has_ptx = (cls_prob >= CLS_THRESHOLD) and (mask_ratio >= 0.005)
+    logger.info(
+        f"/predict | file={file.filename} | prob={cls_prob:.4f} "
+        f"mask_ratio={mask_ratio:.4f} has_ptx={has_ptx} device={_device}"
+    )
     if has_ptx:
         diagnosis = f"PNÖMOTORAKS TESPİT EDİLDİ (olasılık: {cls_prob:.1%})"
     else:
@@ -296,11 +337,6 @@ async def predict_with_tta(file: UploadFile = File(...)):
     - `uncertainty`   : Klinik güven etiketi
     - `is_uncertain`  : Radyolog incelemesi önerilir mi?
     """
-    filename = file.filename or ""
-    allowed_ext = {".png", ".jpg", ".jpeg", ".dcm", ".dicom"}
-    if Path(filename).suffix.lower() not in allowed_ext:
-        raise HTTPException(status_code=400, detail=f"Desteklenmeyen dosya türü.")
-
     try:
         ensemble = get_ensemble()
     except RuntimeError as e:
@@ -327,8 +363,9 @@ async def predict_with_tta(file: UploadFile = File(...)):
     original_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     try:
-        gradcam_bgr, _ = generate_gradcam_captum(get_gradcam_model(), gray, img_size=IMG_SIZE)
-    except Exception:
+        gradcam_bgr, _ = generate_gradcam_result(get_gradcam_model(), gray, img_size=IMG_SIZE)
+    except Exception as e:
+        logger.warning(f"TTA GradCAM başarısız, orijinal görüntü kullanılıyor: {e}")
         gradcam_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     if has_ptx:

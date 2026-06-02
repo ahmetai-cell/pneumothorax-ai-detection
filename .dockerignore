@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist/
+build/
+.eggs/
+
+# Venv
+venv/
+.venv/
+env/
+
+# Data (volume olarak mount edilir)
+data/
+results/checkpoints/*.pth
+results/checkpoints/*.pt
+
+# Notebook
+notebooks/
+*.ipynb
+*.ipynb_checkpoints
+
+# Logs
+*.log
+wandb/
+
+# Test
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend dev files (builder stage zaten build eder)
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+
+# Secrets
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml

@@ -12,16 +12,22 @@ TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 
 from __future__ import annotations
 
+import logging
 import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+from src.utils.normalize import normalize_to_tensor
+
+logger = logging.getLogger(__name__)
 
 try:
     from captum.attr import IntegratedGradients, LayerGradCam, LayerAttribution
     CAPTUM_AVAILABLE = True
 except ImportError:
     CAPTUM_AVAILABLE = False
+    logger.warning("captum kurulu değil — manuel Grad-CAM yedek aktif. pip install captum")
 
 
 # ── Hedef katmanı bul ─────────────────────────────────────────────────────────
@@ -62,6 +68,18 @@ def generate_gradcam_captum(
     """
     if not CAPTUM_AVAILABLE:
         raise ImportError("captum kurulu değil: pip install captum")
+
+    if not isinstance(image_tensor, torch.Tensor):
+        raise TypeError(
+            f"generate_gradcam_captum: image_tensor torch.Tensor olmalı, "
+            f"alındı: {type(image_tensor).__name__}. "
+            f"numpy array için generate_gradcam_result() kullanın."
+        )
+    if image_tensor.ndim != 4 or image_tensor.shape[1] != 1:
+        raise ValueError(
+            f"generate_gradcam_captum: (1, 1, H, W) tensor bekleniyor, "
+            f"alındı: {tuple(image_tensor.shape)}"
+        )
 
     model.eval()
     device = next(model.parameters()).device
@@ -193,15 +211,15 @@ def generate_gradcam_result(
         overlay : BGR görüntü (ısı haritası bindirili)
         prob    : Pnömotoraks olasılığı (0-1)
     """
-    resized    = cv2.resize(gray_image, (img_size, img_size))
-    normalized = resized.astype(np.float32) / 255.0
-    tensor     = torch.tensor(normalized).unsqueeze(0).unsqueeze(0)
-
+    resized     = cv2.resize(gray_image, (img_size, img_size))
+    tensor      = normalize_to_tensor(resized)
     target_size = (gray_image.shape[0], gray_image.shape[1])
 
     if CAPTUM_AVAILABLE:
+        logger.debug("GradCAM: captum LayerGradCam kullanılıyor")
         cam, prob = generate_gradcam_captum(model, tensor, target_size=target_size)
     else:
+        logger.warning("GradCAM: captum bulunamadı, manuel hook yedek devreye girdi")
         cam, prob = _generate_gradcam_manual(model, tensor, target_size=target_size)
 
     overlay = apply_heatmap(gray_image, cam)

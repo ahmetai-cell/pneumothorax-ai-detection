@@ -40,10 +40,16 @@ class PneumothoraxDataset(Dataset):
         img_path = os.path.join(self.img_dir, row["image_id"] + ".png")
 
         image = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            raise FileNotFoundError(
+                f"Görüntü okunamadı (bozuk veya eksik): {img_path}"
+            )
         image = cv2.resize(image, (self.img_size, self.img_size))
         image = image.astype(np.float32) / 255.0
 
         mask = rle_decode(row.get("EncodedPixels", "-1"))
+        if mask is None or mask.size == 0:
+            raise ValueError(f"Geçersiz RLE maske: idx={idx} image_id={row['image_id']}")
         mask = cv2.resize(mask, (self.img_size, self.img_size))
         mask = (mask > 0).astype(np.float32)
 

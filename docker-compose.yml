@@ -1,0 +1,166 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pnömotoraks AI — Production Docker Compose
+#
+# Kullanım:
+#   cp .env.example .env   # secrets doldurun
+#   docker compose up -d
+#   docker compose logs -f backend
+#
+# GPU (CUDA):
+#   docker compose --profile gpu up -d
+#
+# Sadece backend geliştirme:
+#   docker compose up backend
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: ptx-ai
+
+x-restart: &restart-policy
+  restart: unless-stopped
+
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+services:
+
+  # ── Backend: FastAPI ────────────────────────────────────────────────────────
+  backend:
+    <<: [*restart-policy, *default-logging]
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        BASE: cpu
+    image: ptx-backend:${APP_VERSION:-latest}
+    container_name: ptx-backend
+    env_file: .env
+    environment:
+      - CHECKPOINT_DIR=/checkpoints
+      - CLS_THRESHOLD=${CLS_THRESHOLD:-0.5}
+      - SEG_THRESHOLD=${SEG_THRESHOLD:-0.90}
+      - PORT=8000
+      - WORKERS=1
+    volumes:
+      - checkpoints:/checkpoints:ro   # read-only: çalışma zamanında model değişmez
+      - ./results:/app/results:ro     # CSV sonuçları
+    expose:
+      - "8000"
+    networks:
+      - ptx-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s              # Model yükleme süresi için bekle
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+
+  # ── Backend: CUDA variant (profile: gpu) ────────────────────────────────────
+  backend-gpu:
+    <<: [*restart-policy, *default-logging]
+    profiles: [gpu]
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        BASE: cuda
+    image: ptx-backend:${APP_VERSION:-latest}-cuda
+    container_name: ptx-backend-gpu
+    env_file: .env
+    environment:
+      - CHECKPOINT_DIR=/checkpoints
+      - CLS_THRESHOLD=${CLS_THRESHOLD:-0.5}
+      - SEG_THRESHOLD=${SEG_THRESHOLD:-0.90}
+      - PORT=8000
+      - WORKERS=1
+    volumes:
+      - checkpoints:/checkpoints:ro
+      - ./results:/app/results:ro
+    expose:
+      - "8000"
+    networks:
+      - ptx-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 8G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ── Frontend: nginx static ──────────────────────────────────────────────────
+  frontend:
+    <<: [*restart-policy, *default-logging]
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: ptx-frontend:${APP_VERSION:-latest}
+    container_name: ptx-frontend
+    expose:
+      - "80"
+    networks:
+      - ptx-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── nginx: reverse proxy + rate limiting + SSL termination ──────────────────
+  nginx:
+    <<: [*restart-policy, *default-logging]
+    image: nginx:1.27-alpine
+    container_name: ptx-nginx
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro          # SSL sertifikaları (opsiyonel)
+      - nginx-cache:/var/cache/nginx
+    networks:
+      - ptx-net
+    depends_on:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  checkpoints:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${CHECKPOINT_HOST_PATH:-./results/checkpoints}
+  nginx-cache:
+    driver: local
+
+networks:
+  ptx-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -1,0 +1,59 @@
+model:
+  encoder: efficientnet-b2
+  pretrained: true
+  in_channels: 1
+  deep_supervision: true
+
+training:
+  img_size: 512
+  batch_size: 8
+  epochs: 80
+  n_folds: 5
+  seed: 42
+  grad_clip: 1.0
+  grad_accum_steps: 2
+  amp: true
+
+  optimizer:
+    encoder_lr: 0.00005
+    decoder_lr: 0.0005
+    weight_decay: 0.0001
+
+  scheduler:
+    T_0: 20
+    T_mult: 2
+    eta_min: 0.000001
+
+  loss:
+    tversky_alpha: 0.3
+    tversky_beta: 0.7
+    seg_tversky_w: 0.7
+    seg_focal_w: 0.3
+    cls_w: 0.3
+    aux_w: 0.3
+    focal_alpha: 0.25
+    focal_gamma: 2.0
+
+  early_stopping:
+    patience: 15
+    min_delta: 0.001
+
+data:
+  img_size: 512
+  num_workers: 4
+  pin_memory: true
+
+checkpoint:
+  dir: output/checkpoints
+
+logging:
+  use_wandb: true
+  wandb_project: pneumothorax-tubitak
+  wandb_entity: ""
+  use_tensorboard: true
+  log_dir: output/runs
+
+# Filled automatically after training
+thresholds:
+  cls_threshold: 0.5
+  seg_threshold: 0.5
