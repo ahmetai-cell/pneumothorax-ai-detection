@@ -98,12 +98,15 @@ _DIST = Path("frontend/dist")
 if _DIST.exists():
     app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
 
+    @app.exception_handler(404)
+    async def spa_fallback(request, exc):
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept and _DIST.exists():
+            return FileResponse(_DIST / "index.html")
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
     @app.get("/", include_in_schema=False)
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa(full_path: str = ""):
-        if full_path.startswith(("api/", "predict", "health", "results", "metrics", "docs", "openapi")):
-            from fastapi import HTTPException
-            raise HTTPException(404)
+    async def serve_index():
         return FileResponse(_DIST / "index.html")
 
 # ── Model config ──────────────────────────────────────────────────────────────
