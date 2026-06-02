@@ -165,6 +165,7 @@ class Trainer:
             eta_min = sch_cfg["eta_min"],
         )
 
+        # AMP only on CUDA; MPS/CPU use full precision.
         self.use_amp     = t_cfg.get("amp", True) and device.type == "cuda"
         self.scaler      = torch.amp.GradScaler("cuda", enabled=self.use_amp)
         self.grad_clip   = t_cfg.get("grad_clip", 1.0)

@@ -235,6 +235,8 @@ def build_folds(
     n_folds: int = 5,
     seed: int = 42,
 ) -> list[tuple[pd.DataFrame, pd.DataFrame]]:
+    # Patient-level split: same patient cannot appear in both train and val.
+    # Prevents data leakage that would inflate validation metrics.
     """
     Patient-level StratifiedGroupKFold split.
     Stratifies by label, groups by patient_id — same patient never in both splits.

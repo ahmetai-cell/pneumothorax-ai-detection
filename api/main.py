@@ -111,9 +111,10 @@ else:
 
 logger.info(f"Device: {_device}")
 
-# ── Thread pool — serializes GPU calls, frees event loop ─────────────────────
-# max_workers=1: GPU inference sequential (prevents OOM on single GPU)
+# ThreadPool avoids blocking FastAPI event loop during GPU inference.
+# max_workers=1: serializes requests to prevent GPU OOM on single-GPU setups.
 _inference_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+# Prevents GPU memory race condition when multiple requests arrive simultaneously.
 _model_lock = threading.Lock()
 
 # ── Model singletons ──────────────────────────────────────────────────────────

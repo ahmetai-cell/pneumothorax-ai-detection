@@ -29,6 +29,9 @@ def normalize_image(img: np.ndarray) -> np.ndarray:
     Returns:
         float32 ndarray, aralık ≈ [-2.12, +2.25]
     """
+    # Training-inference normalization consistency.
+    # MUST match src/data/transforms.py → A.Normalize(mean=0.485, std=0.229, max_pixel_value=255)
+    # Changing this formula invalidates all trained checkpoints.
     if img.dtype == np.uint8:
         img_01 = img.astype(np.float32) / 255.0
     else:
