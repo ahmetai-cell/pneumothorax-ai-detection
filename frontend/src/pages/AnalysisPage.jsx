@@ -17,13 +17,13 @@ function ModelBanner({ metrics }) {
     return '—'
   }
   return (
-    <div className="flex flex-wrap gap-4 px-4 py-2 rounded-lg bg-gray-800/50 border border-gray-700 text-xs text-gray-400">
-      <span className="font-semibold text-gray-300 mr-2">Model Performansı:</span>
+    <div className="flex flex-wrap gap-4 px-4 py-2 rounded-lg bg-gray-100 border border-gray-200 dark:bg-gray-800/50 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+      <span className="font-semibold text-gray-700 dark:text-gray-300 mr-2">Model Performansı:</span>
       <span>Dice <span className="text-green-400 font-mono">{pick('dice','Dice')}</span></span>
       <span>AUC  <span className="text-blue-400  font-mono">{pick('auc','AUC')}</span></span>
       <span>Sensitivite <span className="text-yellow-400 font-mono">{pick('sensitivity','Sensitivity')}</span></span>
       <span>Spesifisite <span className="text-purple-400 font-mono">{pick('specificity','Specificity')}</span></span>
-      <span className="ml-auto text-gray-600">EfficientNet-B2 + UNet++ | 5-fold CV</span>
+      <span className="ml-auto text-gray-400 dark:text-gray-600">EfficientNet-B2 + UNet++ | 5-fold CV</span>
     </div>
   )
 }
@@ -43,19 +43,19 @@ function PredictionResult({ result, mode }) {
       <div className="flex items-start justify-between flex-wrap gap-3">
         {/* YES / NO */}
         <div>
-          <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Tanı</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Tanı</p>
           <ResultBadge hasPneumothorax={result.has_pneumothorax} probability={result.probability} />
         </div>
         {/* Risk + confidence */}
         <div className="text-right">
           <p className={`text-lg font-bold ${risk.color}`}>{risk.label}</p>
-          <p className="text-sm text-gray-400 font-mono">
+          <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">
             Güven: {(result.probability * 100).toFixed(1)}%
           </p>
         </div>
       </div>
 
-      <p className="text-sm text-gray-300">{result.diagnosis}</p>
+      <p className="text-sm text-gray-700 dark:text-gray-300">{result.diagnosis}</p>
 
       {/* TTA uncertainty */}
       {mode === 'tta' && result.prob_votes && (
@@ -105,7 +105,7 @@ export default function AnalysisPage() {
 
       {/* Page title */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-100 mb-1">Akciğer Grafisi Analizi</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">Akciğer Grafisi Analizi</h1>
         <p className="text-gray-500 text-sm">
           DICOM veya PNG/JPEG yükleyin — yapay zeka pnömotoraks tespiti yapar.
         </p>
@@ -140,7 +140,7 @@ export default function AnalysisPage() {
 
           {/* Spinner */}
           {loading && (
-            <div className="flex items-center gap-3 text-gray-400 text-sm">
+            <div className="flex items-center gap-3 text-gray-500 dark:text-gray-400 text-sm">
               <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
               Model çalışıyor, lütfen bekleyin…
             </div>
@@ -148,7 +148,7 @@ export default function AnalysisPage() {
 
           {/* Error */}
           {error && (
-            <div className="px-4 py-3 rounded-lg bg-red-950 border border-red-700 text-red-300 text-sm">
+            <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 dark:bg-red-950 dark:border-red-700 dark:text-red-300 text-sm">
               <strong>Hata:</strong> {error}
             </div>
           )}
@@ -166,7 +166,7 @@ export default function AnalysisPage() {
               gradcamImage={result.gradcam_image}
             />
           ) : (
-            <div className="card h-full min-h-[320px] flex items-center justify-center text-gray-600 text-sm">
+            <div className="card h-full min-h-[320px] flex items-center justify-center text-gray-400 dark:text-gray-600 text-sm">
               Görüntü yüklenince burada görünecek
             </div>
           )}
