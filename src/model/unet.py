@@ -22,7 +22,7 @@ class _AuxSegHead(nn.Module):
     def __init__(self, in_ch: int):
         super().__init__()
         self.head = nn.Sequential(
-            nn.Conv2d(in_ch, 64, kernel_size=3, padding=1),
+            nn.Conv2d(in_ch, 64, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 1, kernel_size=1),

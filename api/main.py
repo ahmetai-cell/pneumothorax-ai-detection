@@ -14,8 +14,6 @@ Endpointler:
 TÜBİTAK 2209-A | Ahmet Demir, Erkan Koçulu
 """
 
-from __future__ import annotations
-
 import asyncio
 import base64
 import collections
@@ -78,7 +76,7 @@ class _RateLimiter:
                 )
             dq.append(now)
 
-_inference_limit = _RateLimiter(calls=10, period=60)
+_inference_limit = _RateLimiter(calls=60, period=60)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -96,7 +94,7 @@ app.add_middleware(
 
 # ── Model config ──────────────────────────────────────────────────────────────
 CHECKPOINT_DIR = Path(os.getenv("CHECKPOINT_DIR", "results/checkpoints"))
-N_FOLDS  = 5
+N_FOLDS  = int(os.getenv("N_FOLDS", "5"))
 IMG_SIZE = 512
 CLS_T    = float(os.getenv("CLS_THRESHOLD", str(CLS_THRESHOLD)))
 SEG_T    = float(os.getenv("SEG_THRESHOLD", str(SEG_THRESHOLD)))
@@ -142,15 +140,15 @@ def _load_fold(fold_i: int) -> PneumothoraxModel:
     path = CHECKPOINT_DIR / f"fold_{fold_i}_best.pth"
     if not path.exists():
         raise RuntimeError(f"Checkpoint bulunamadı: {path}")
+    state = torch.load(str(path), map_location=_device, weights_only=True)
+    if isinstance(state, dict) and "model_state" in state:
+        state = state["model_state"]
+    has_aux = any("aux_head" in k for k in state)
     m = PneumothoraxModel(
         encoder_name=os.getenv("MODEL_ENCODER", "efficientnet-b2"),
         in_channels=1,
-        deep_supervision=False,
+        deep_supervision=has_aux,
     )
-    state = torch.load(str(path), map_location=_device, weights_only=True)
-    # Supports both raw state_dict and {"model_state": ...} formats
-    if isinstance(state, dict) and "model_state" in state:
-        state = state["model_state"]
     m.load_state_dict(state)
     return m.eval().to(_device)
 
