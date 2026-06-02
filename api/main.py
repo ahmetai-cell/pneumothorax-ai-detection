@@ -32,7 +32,8 @@ import numpy as np
 import torch
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 
 from src.models.unet import PneumothoraxModel
@@ -91,6 +92,19 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+# ── Frontend static files ─────────────────────────────────────────────────────
+_DIST = Path("frontend/dist")
+if _DIST.exists():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str = ""):
+        if full_path.startswith(("api/", "predict", "health", "results", "metrics", "docs", "openapi")):
+            from fastapi import HTTPException
+            raise HTTPException(404)
+        return FileResponse(_DIST / "index.html")
 
 # ── Model config ──────────────────────────────────────────────────────────────
 CHECKPOINT_DIR = Path(os.getenv("CHECKPOINT_DIR", "results/checkpoints"))

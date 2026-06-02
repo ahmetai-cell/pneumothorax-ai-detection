@@ -24,7 +24,8 @@ wandb/
 
 # Build / dist
 build/
-dist/
+/dist/
+frontend/dist/.gitkeep
 *.onnx
 
 # Test cache

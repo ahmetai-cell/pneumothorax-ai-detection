@@ -49,14 +49,24 @@ Sonuç: Pnömotoraks var / yok + Bölge haritası
 
 ## 📊 Model Performansı
 
-| Metrik | Değer |
-|--------|-------|
-| **Dice Score** | 0.872 |
-| **IoU (Jaccard)** | 0.814 |
-| **AUC-ROC** | 0.961 |
-| **Hassasiyet** | 93.4% |
-| **Özgüllük** | 91.7% |
-| **F1 Score** | 0.889 |
+### 5-Fold Cross-Validation (PTX-498 + NIH, 1048 hasta)
+
+| Fold | Dice | AUC | Sensitivite |
+|------|------|-----|-------------|
+| Fold 1 | 0.8428 | 1.000 | 0.990 |
+| Fold 2 | 0.8094 | 1.000 | 1.000 |
+| Fold 3 | 0.8495 | 1.000 | 1.000 |
+| Fold 4 | 0.8084 | 1.000 | 1.000 |
+| Fold 5 | 0.8548 | 1.000 | 1.000 |
+| **Ortalama** | **0.8330 ± 0.020** | **1.000** | **0.998** |
+
+### Bağımsız Klinik Validasyon (85 hasta, model hiç görmedi)
+
+| Veri Seti | Cihaz | Hasta | Sensitivite |
+|-----------|-------|-------|-------------|
+| Lokal klinik | DX | 37 | **89.2%** |
+| TÜBİTAK seti | CR | 48 | **87.5%** |
+| **Toplam** | 2 farklı cihaz | **85** | **88.2%** |
 
 ---
 
@@ -66,18 +76,19 @@ Sonuç: Pnömotoraks var / yok + Bölge haritası
 Input (512×512 Grayscale X-Ray)
          │
     ┌────▼─────────────────────────┐
-    │  EfficientNet-B0 Encoder     │  ← Transfer Learning (ImageNet)
-    │  (Feature Extraction)        │
+    │  EfficientNet-B2 Encoder     │  ← Transfer Learning (ImageNet)
+    │  10.6M parametre             │
     └────┬────────────────────────-┘
-         │  Skip Connections
+         │  Skip Connections (UNet++)
     ┌────▼─────────────────────────┐
-    │  U-Net Decoder               │  ← Upsampling + Concatenation
-    │  (Segmentation Head)         │
+    │  UNet++ Decoder              │  ← Dense skip connections
+    │  Deep Supervision            │
     └────┬─────────────────────────┘
          │
-    ┌────▼─────────────────────────┐
-    │  Classification Head         │  ← Binary: Pneumothorax var/yok
-    └──────────────────────────────┘
+    ┌────▼────────────┬────────────┐
+    │  Seg Head        │  Cls Head  │
+    │  (Maske)         │  (Var/Yok) │
+    └─────────────────┴────────────┘
 ```
 
 ---
@@ -148,23 +159,35 @@ transforms = A.Compose([
 
 ## 🚀 Kurulum & Kullanım
 
+### Gereksinimler
+- Python 3.10+
+- CUDA GPU (opsiyonel, CPU'da da çalışır)
+
 ```bash
-# Repo'yu klonla
+# 1. Repo'yu klonla
 git clone https://github.com/ahmetai-cell/pneumothorax-ai-detection.git
 cd pneumothorax-ai-detection
 
-# Ortam kur
+# 2. Bağımlılıkları yükle
 pip install -r requirements.txt
 
-# Eğitimi başlat (lokal)
-python scripts/train_local_png.py \
-    --data_root /path/to/PTX-498-v2-fix \
-    --nih_root  /path/to/nih_data \
-    --epochs 50 --batch_size 16 --no_wandb
+# 3. Checkpoint'leri koy (Google Drive: ptx_output/checkpoints/)
+# results/checkpoints/fold_1_best.pth ... fold_5_best.pth
 
-# Tek görüntü tahmini
-python predict.py --image path/to/xray.png
+# 4. Uygulamayı başlat
+uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
+
+Tarayıcıda aç: **http://localhost:8000**
+
+### API Endpoint'leri
+| Endpoint | Metod | Açıklama |
+|----------|-------|----------|
+| `/` | GET | Web arayüzü |
+| `/predict` | POST | Standart çıkarım |
+| `/predict/tta` | POST | TTA (daha güvenilir) |
+| `/health` | GET | Model durum kontrolü |
+| `/results` | GET | K-fold sonuçları |
 
 ---
 
