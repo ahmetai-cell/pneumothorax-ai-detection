@@ -129,7 +129,8 @@ class _EnsembleModel(torch.nn.Module):
     def forward(self, x: torch.Tensor):
         seg_acc = cls_acc = None
         for m in self.models:
-            seg, cls = m(x)[0], m(x)[1]
+            out = m(x)                  # tek çağrı
+            seg, cls = out[0], out[1]
             seg_acc = seg if seg_acc is None else seg_acc + seg
             cls_acc = cls if cls_acc is None else cls_acc + cls
         n = len(self.models)
@@ -140,8 +141,12 @@ def _load_fold(fold_i: int) -> PneumothoraxModel:
     path = CHECKPOINT_DIR / f"fold_{fold_i}_best.pth"
     if not path.exists():
         raise RuntimeError(f"Checkpoint bulunamadı: {path}")
-    m = PneumothoraxModel()
-    state = torch.load(str(path), map_location=_device, weights_only=False)
+    m = PneumothoraxModel(
+        encoder_name=os.getenv("MODEL_ENCODER", "efficientnet-b2"),
+        in_channels=1,
+        deep_supervision=False,
+    )
+    state = torch.load(str(path), map_location=_device, weights_only=True)
     # Supports both raw state_dict and {"model_state": ...} formats
     if isinstance(state, dict) and "model_state" in state:
         state = state["model_state"]

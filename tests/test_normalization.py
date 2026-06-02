@@ -10,15 +10,14 @@ import pytest
 import torch
 
 
-def _albumentations_normalize(img_01: np.ndarray) -> np.ndarray:
+def _albumentations_normalize(img_uint8: np.ndarray) -> np.ndarray:
     """
-    Eğitim pipeline'ının yaptığını simüle eder:
-    PTXDataset: image /255  → [0,1]
-    A.Normalize(mean=0.485, std=0.229, max_pixel_value=255)
-    → albumentations formülü: (input / max_pixel_value - mean) / std
-    → (img_01 / 255 - 0.485) / 0.229
+    Eğitim pipeline'ını simüle eder:
+    src/data/transforms.py: A.Normalize(mean=0.485, std=0.229, max_pixel_value=255)
+    uint8 girdiye uygulandığında: (pixel/255 - 0.485) / 0.229
+    Çıktı aralığı: [-2.12, +2.25]
     """
-    return (img_01.astype(np.float32) / 255.0 - 0.485) / 0.229
+    return (img_uint8.astype(np.float32) / 255.0 - 0.485) / 0.229
 
 
 class TestNormalizeImage:
@@ -30,31 +29,32 @@ class TestNormalizeImage:
         """uint8 görüntü → normalize_image, eğitim pipeline ile aynı sonucu vermeli."""
         rng = np.random.default_rng(42)
         img_uint8 = rng.integers(0, 256, (512, 512), dtype=np.uint8)
-        img_01 = img_uint8.astype(np.float32) / 255.0
 
-        expected = _albumentations_normalize(img_01)
+        expected = _albumentations_normalize(img_uint8)
         result   = self.normalize_image(img_uint8)
 
         np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5,
             err_msg="uint8 girdi için eğitim normalizasyonuyla uyumsuz")
 
     def test_float01_input_matches_training(self):
-        """[0,1] float görüntü → normalize_image, eğitim pipeline ile aynı sonucu vermeli."""
+        """[0,1] float girdi, aynı sonucu vermeli (uint8/255 ile aynı)."""
         rng = np.random.default_rng(42)
-        img_01 = rng.random((512, 512)).astype(np.float32)
+        img_uint8 = rng.integers(0, 256, (64, 64), dtype=np.uint8)
+        img_01    = img_uint8.astype(np.float32) / 255.0
 
-        expected = _albumentations_normalize(img_01)
-        result   = self.normalize_image(img_01)
+        result_uint8 = self.normalize_image(img_uint8)
+        result_float = self.normalize_image(img_01)
 
-        np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-5,
-            err_msg="float01 girdi için eğitim normalizasyonuyla uyumsuz")
+        np.testing.assert_allclose(result_uint8, result_float, rtol=1e-5, atol=1e-5,
+            err_msg="uint8 ve float01 girdi farklı sonuç veriyor")
 
     def test_output_range(self):
-        """Tipik görüntü için çıktı ≈ [-2.12, -2.10] aralığında olmalı."""
-        img = np.full((64, 64), 128, dtype=np.uint8)
+        """Görüntü çıktısı [-2.12, +2.25] aralığında olmalı."""
+        rng = np.random.default_rng(0)
+        img = rng.integers(0, 256, (512, 512), dtype=np.uint8)
         result = self.normalize_image(img)
-        assert result.mean() < -2.0, f"Ortalama çok yüksek: {result.mean():.4f}"
-        assert result.mean() > -2.2, f"Ortalama çok düşük: {result.mean():.4f}"
+        assert result.min() >= -2.2, f"Min çok düşük: {result.min():.4f}"
+        assert result.max() <=  2.3, f"Max çok yüksek: {result.max():.4f}"
 
     def test_output_dtype(self):
         img = np.zeros((32, 32), dtype=np.uint8)
@@ -64,15 +64,13 @@ class TestNormalizeImage:
     def test_black_image(self):
         img = np.zeros((64, 64), dtype=np.uint8)
         result = self.normalize_image(img)
-        # (0/255/255 - 0.485) / 0.229 ≈ -2.118
-        expected_val = (0.0 / 255.0 - 0.485) / 0.229
+        expected_val = (0.0 - 0.485) / 0.229  # -2.1179
         np.testing.assert_allclose(result, expected_val, atol=1e-5)
 
     def test_white_image(self):
         img = np.full((64, 64), 255, dtype=np.uint8)
         result = self.normalize_image(img)
-        # (1/255 - 0.485) / 0.229 ≈ -2.100
-        expected_val = (1.0 / 255.0 - 0.485) / 0.229
+        expected_val = (1.0 - 0.485) / 0.229  # +2.2489
         np.testing.assert_allclose(result, expected_val, atol=1e-5)
 
 
@@ -110,13 +108,13 @@ class TestNormalizeToTensor:
 class TestNormalizationConsistency:
     """api, tta, predict modülleri aynı formülü kullandığını doğrular."""
 
-    def test_api_run_inference_matches_normalize_image(self):
-        """api/main.py'nin run_inference() normalize_to_tensor kullanıyor olmalı."""
+    def test_api_uses_normalize_to_tensor(self):
+        """api/main.py _inference_sync normalize_to_tensor kullanıyor olmalı."""
         import inspect
         import api.main as api_mod
-        src = inspect.getsource(api_mod.run_inference)
+        src = inspect.getsource(api_mod._inference_sync)
         assert "normalize_to_tensor" in src, \
-            "run_inference() normalize_to_tensor kullanmıyor — normalizasyon tutarsız!"
+            "_inference_sync() normalize_to_tensor kullanmıyor — normalizasyon tutarsız!"
 
     def test_tta_uses_normalize_image(self):
         """tta.py'nin _build_tta_variants() normalize_image import etmeli."""
