@@ -30,6 +30,7 @@ tensorboard>=2.13.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
+slowapi>=0.1.9
 streamlit>=1.35.0
 
 # ── Config ────────────────────────────────────────────────────────────────────

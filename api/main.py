@@ -24,10 +24,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from src.model.unet import PneumothoraxModel
 from src.preprocessing.green_mask_extractor import load_image, overlay_mask_on_image
@@ -40,6 +43,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 # ── Uygulama ──────────────────────────────────────────────────────────────────
 
+_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if o.strip()
+]
+
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="Pnömotoraks Tespit API",
     description=(
@@ -50,11 +61,14 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # ── Model yükleme ──────────────────────────────────────────────────────────────
@@ -250,7 +264,8 @@ async def health():
 
 
 @app.post("/predict", summary="Akciğer grafisi analiz et (standart)")
-async def predict(file: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def predict(request: Request, file: UploadFile = File(...)):
     """
     **Akış:**
     1. Dosyayı yükle (PNG, JPEG veya DICOM)
@@ -323,7 +338,8 @@ async def predict(file: UploadFile = File(...)):
 
 
 @app.post("/predict/tta", summary="Akciğer grafisi analiz et (TTA — daha güvenilir)")
-async def predict_with_tta(file: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def predict_with_tta(request: Request, file: UploadFile = File(...)):
     """
     **Test-Time Augmentation (TTA) ile tahmin.**
 

@@ -47,7 +47,7 @@ checkpoint:
   dir: output/checkpoints
 
 logging:
-  use_wandb: true
+  use_wandb: false
   wandb_project: pneumothorax-tubitak
   wandb_entity: ""
   use_tensorboard: true
