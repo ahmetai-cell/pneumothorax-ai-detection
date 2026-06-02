@@ -1,6 +1,14 @@
 .PHONY: start stop restart logs build test clean
 
-# ── Tek komutla başlat ────────────────────────────────────────────────────────
+# ── Geliştirme modu (Docker olmadan) ─────────────────────────────────────────
+dev:
+	@echo "Backend: http://localhost:8000"
+	@echo "Frontend: http://localhost:5173"
+	@trap 'kill 0' EXIT; \
+	 uvicorn api.main:app --reload --port 8000 & \
+	 cd frontend && npm run dev
+
+# ── Tek komutla başlat (Docker) ───────────────────────────────────────────────
 start:
 	@chmod +x start.sh && ./start.sh
 
