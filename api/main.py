@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import collections
 import concurrent.futures
 import csv
 import io
@@ -25,18 +26,16 @@ import json
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from src.model.unet import PneumothoraxModel
 from src.preprocessing.green_mask_extractor import overlay_mask_on_image
@@ -50,12 +49,36 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _ALLOWED_ORIGINS = [
     o.strip()
-    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
     if o.strip()
 ]
 
-# ── Rate limiter ──────────────────────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address)
+# ── Rate limiter (Depends tabanlı — tüm FastAPI versiyonlarıyla uyumlu) ───────
+_rate_store: dict[str, collections.deque] = collections.defaultdict(
+    lambda: collections.deque()
+)
+_rate_lock = threading.Lock()
+
+class _RateLimiter:
+    def __init__(self, calls: int = 10, period: int = 60):
+        self.calls  = calls
+        self.period = period
+
+    async def __call__(self, request: Request) -> None:
+        ip  = getattr(request.client, "host", "unknown")
+        now = time.time()
+        with _rate_lock:
+            dq = _rate_store[ip]
+            while dq and now - dq[0] > self.period:
+                dq.popleft()
+            if len(dq) >= self.calls:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Çok fazla istek. {self.period} saniye içinde max {self.calls}.",
+                )
+            dq.append(now)
+
+_inference_limit = _RateLimiter(calls=10, period=60)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -63,9 +86,6 @@ app = FastAPI(
     description="TÜBİTAK 2209-A — Derin öğrenme tabanlı pnömotoraks tespit sistemi.",
     version="1.0.0",
 )
-
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -360,8 +380,11 @@ def _safe_float(v):
 
 
 @app.post("/predict")
-@limiter.limit("10/minute")
-async def predict(request: Request, file: UploadFile = File(...)):
+async def predict(
+    request: Request,
+    file: UploadFile = File(...),
+    _rate: None = Depends(_inference_limit),
+):
     try:
         get_ensemble()
     except RuntimeError as e:
@@ -416,8 +439,11 @@ async def predict(request: Request, file: UploadFile = File(...)):
 
 
 @app.post("/predict/tta")
-@limiter.limit("10/minute")
-async def predict_with_tta(request: Request, file: UploadFile = File(...)):
+async def predict_with_tta(
+    request: Request,
+    file: UploadFile = File(...),
+    _rate: None = Depends(_inference_limit),
+):
     try:
         get_ensemble()
     except RuntimeError as e:
