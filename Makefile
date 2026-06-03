@@ -2,6 +2,7 @@
 
 # ── Geliştirme modu (Docker olmadan) ─────────────────────────────────────────
 dev:
+	@pkill -f "uvicorn api.main" 2>/dev/null; sleep 1; true
 	@echo "Uygulama baslatiliyor..."
 	@echo "Adres: http://localhost:8000"
 	@N_FOLDS=5 uvicorn api.main:app --port 8000
