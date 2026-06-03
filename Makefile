@@ -2,11 +2,9 @@
 
 # ── Geliştirme modu (Docker olmadan) ─────────────────────────────────────────
 dev:
-	@echo "Backend: http://localhost:8000"
-	@echo "Frontend: http://localhost:5173"
-	@trap 'kill 0' EXIT; \
-	 uvicorn api.main:app --reload --port 8000 & \
-	 cd frontend && npm run dev
+	@echo "Uygulama baslatiliyor..."
+	@echo "Adres: http://localhost:8000"
+	@N_FOLDS=5 uvicorn api.main:app --port 8000
 
 # ── Tek komutla başlat (Docker) ───────────────────────────────────────────────
 start:
